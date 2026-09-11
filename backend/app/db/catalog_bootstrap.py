@@ -2,8 +2,7 @@
 
 from __future__ import annotations
 
-from sqlalchemy import text
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session
 
@@ -15,8 +14,10 @@ from app.models.catalog import CatalogBase, CatalogSource
 def ensure_catalog_schema(settings: Settings | None = None) -> None:
     cfg = settings or get_settings()
     engine = get_catalog_engine(cfg)
+    _ensure_vector_extension(engine)
     CatalogBase.metadata.create_all(bind=engine)
     _migrate_relation_natural_key(engine)
+    _update_step_meta(engine)
     factory = get_catalog_session_factory(cfg)
     session = factory()
     try:
@@ -29,13 +30,35 @@ def ensure_catalog_schema(settings: Settings | None = None) -> None:
         session.close()
 
 
+def _ensure_vector_extension(engine: Engine) -> None:
+    """Activate pgvector safely on fresh and existing volumes."""
+    with engine.begin() as conn:
+        conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
+
+
+def _update_step_meta(engine: Engine) -> None:
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                """
+                INSERT INTO catalog_meta (meta_key, meta_value)
+                VALUES
+                    ('current_step', 'Step 3 - CPU-only Embedding Pipeline + pgvector'),
+                    ('schema_version', '0.3.0')
+                ON CONFLICT (meta_key) DO UPDATE
+                SET meta_value = EXCLUDED.meta_value,
+                    updated_at = CURRENT_TIMESTAMP
+                """
+            )
+        )
+
+
 def _migrate_relation_natural_key(engine: Engine) -> None:
     """
     Migrate catalog_relation unique key from (source_id, constraint_name)
     to (source_table_id, constraint_name) for existing volumes.
     """
     with engine.begin() as conn:
-        # Drop legacy unique constraints/indexes if present.
         conn.execute(
             text(
                 """
@@ -52,7 +75,6 @@ def _migrate_relation_natural_key(engine: Engine) -> None:
                 """
             )
         )
-        # Recreate the corrected unique constraint when missing.
         conn.execute(
             text(
                 """
@@ -92,7 +114,6 @@ def _ensure_default_source(session: Session, cfg: Settings) -> None:
             )
         )
     else:
-        # Refresh non-secret connection metadata only (never store password).
         existing.db_type = "postgresql"
         existing.host = cfg.medical_db_host
         existing.port = cfg.medical_db_port

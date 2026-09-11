@@ -1,4 +1,4 @@
-"""Streamlit UI for Step 2 status + schema analysis trigger."""
+"""Streamlit UI for Step 3 status + schema analyze + embedding pipeline."""
 
 from __future__ import annotations
 
@@ -16,11 +16,11 @@ st.set_page_config(
 )
 
 st.title("DEMIS Schema Semantic Search PoC")
-st.subheader("현재 Step: Step 2 - Schema Analyzer / Schema Catalog")
+st.subheader("현재 Step: Step 3 - CPU-only Embedding Pipeline + pgvector")
 st.write(
-    "분석 대상 의료 DB의 Schema Metadata를 자동 수집하여 "
-    "schema_catalog에 구조화 저장하는 단계입니다. "
-    "Embedding / Semantic Search는 아직 포함되지 않습니다."
+    "Raw Schema Catalog로부터 Search Document를 생성하고, "
+    "CPU-only BGE-M3(또는 Fake) Embedding을 pgvector에 저장합니다. "
+    "자연어 Semantic Search UI는 Step 4 범위입니다."
 )
 
 st.divider()
@@ -35,13 +35,14 @@ try:
     col1.metric("Backend", health.get("backend", "unknown"))
     col2.metric("medical_demo", health.get("medical_db", "unknown"))
     col3.metric("schema_catalog", health.get("catalog_db", "unknown"))
+    st.caption(f"step={health.get('step', '')}")
 except Exception as exc:  # noqa: BLE001
     st.error(f"Backend 연결 실패: {exc}")
     st.info("docker compose up --build 후 Backend가 healthy 상태인지 확인하세요.")
     st.stop()
 
 st.divider()
-st.markdown("### Schema Analyze")
+st.markdown("### 1) Schema Analyze")
 
 if st.button("Schema Analyze 실행", type="primary"):
     with st.spinner("medical_demo 스키마 분석 중..."):
@@ -51,9 +52,7 @@ if st.button("Schema Analyze 실행", type="primary"):
             result = analyze_resp.json()
             if result.get("status") == "SUCCESS":
                 st.success(
-                    f"분석 성공 (run_id={result.get('run_id')}) — "
-                    f"tables={result.get('tables')}, columns={result.get('columns')}, "
-                    f"relations={result.get('relations')}, indexes={result.get('indexes')}"
+                    f"분석 성공 — tables={result.get('tables')}, columns={result.get('columns')}"
                 )
             else:
                 st.error(f"분석 실패: {result.get('error_message')}")
@@ -61,37 +60,89 @@ if st.button("Schema Analyze 실행", type="primary"):
         except Exception as exc:  # noqa: BLE001
             st.error(f"Analyze 호출 실패: {exc}")
 
-st.markdown("### 최근 Analysis Run")
+st.divider()
+st.markdown("### 2) Search Document Rebuild")
+
+if st.button("Search Document Rebuild"):
+    with st.spinner("Search Document 재생성 중..."):
+        try:
+            rebuild_resp = requests.post(
+                f"{BACKEND_URL}/api/v1/embeddings/documents/rebuild", timeout=120
+            )
+            rebuild_resp.raise_for_status()
+            rebuilt = rebuild_resp.json()
+            st.success(
+                f"documents={rebuilt.get('documents')} "
+                f"(TABLE={rebuilt.get('tables')}, COLUMN={rebuilt.get('columns')}) / "
+                f"created={rebuilt.get('created')}, updated={rebuilt.get('updated')}, "
+                f"unchanged={rebuilt.get('unchanged')}"
+            )
+            st.json(rebuilt)
+        except Exception as exc:  # noqa: BLE001
+            st.error(f"Rebuild 실패: {exc}")
+
+st.divider()
+st.markdown("### 3) Embedding Run (CPU)")
+
+if st.button("Embedding Run"):
+    with st.spinner("Embedding 실행 중 (CPU)..."):
+        try:
+            run_resp = requests.post(f"{BACKEND_URL}/api/v1/embeddings/run", timeout=3600)
+            run_resp.raise_for_status()
+            run = run_resp.json()
+            st.success(
+                f"run_id={run.get('run_id')} status={run.get('status')} "
+                f"embedded={run.get('embedded')} skipped={run.get('skipped')} "
+                f"failed={run.get('failed')}"
+            )
+            st.caption(f"model_key={run.get('model_key')}")
+            st.json(run)
+        except Exception as exc:  # noqa: BLE001
+            st.error(f"Embedding Run 실패: {exc}")
+
+st.divider()
+st.markdown("### Embedding Stats")
+
 try:
-    runs_resp = requests.get(f"{BACKEND_URL}/api/v1/schema/runs", params={"limit": 5}, timeout=10)
+    stats_resp = requests.get(f"{BACKEND_URL}/api/v1/embeddings/stats", timeout=10)
+    stats_resp.raise_for_status()
+    stats = stats_resp.json()
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("Active Docs", stats.get("active_documents", 0))
+    c2.metric("TABLE", stats.get("table_documents", 0))
+    c3.metric("COLUMN", stats.get("column_documents", 0))
+    c4.metric("Embeddings", stats.get("embedding_count", 0))
+    st.caption(
+        f"provider={stats.get('embedding_provider')} device={stats.get('embedding_device')} "
+        f"dim={stats.get('embedding_dimension')} stale={stats.get('stale_documents')}"
+    )
+    if stats.get("model_keys"):
+        st.write("model_keys:", stats.get("model_keys"))
+except Exception as exc:  # noqa: BLE001
+    st.warning(f"Stats 조회 실패: {exc}")
+
+st.divider()
+st.markdown("### 최근 Embedding Runs")
+try:
+    runs_resp = requests.get(f"{BACKEND_URL}/api/v1/embeddings/runs", params={"limit": 5}, timeout=10)
     runs_resp.raise_for_status()
     runs = runs_resp.json()
     if not runs:
-        st.info("아직 분석 이력이 없습니다. 위에서 Analyze를 실행하세요.")
+        st.info("아직 Embedding Run 이력이 없습니다.")
     else:
-        latest = runs[0]
-        m1, m2, m3, m4 = st.columns(4)
-        m1.metric("Tables", latest.get("table_count", 0))
-        m2.metric("Columns", latest.get("column_count", 0))
-        m3.metric("Relations", latest.get("relation_count", 0))
-        m4.metric("Indexes", latest.get("index_count", 0))
-        st.caption(
-            f"최신 run_id={latest.get('id')} / status={latest.get('status')} / "
-            f"schema={latest.get('target_schema')}"
-        )
         st.dataframe(runs, use_container_width=True)
 except Exception as exc:  # noqa: BLE001
     st.warning(f"Run 목록 조회 실패: {exc}")
 
 st.divider()
-st.markdown("### 향후 구현 예정")
+st.markdown("### 향후 구현 예정 (Step 4+)")
 st.markdown(
     """
-1. **Step 3** — CPU-only Embedding Pipeline + PostgreSQL/pgvector  
-2. **Step 4** — Semantic / Keyword Hybrid Search + FK Relation Expansion  
-3. **Step 5** — Streamlit Schema Explorer / Natural Language Search UI  
-4. **Step 6** — 정확도 평가 및 기술검증  
+1. **Semantic Search** — Query Embedding + cosine similarity  
+2. **Keyword / Hybrid Search** — synonym + RRF  
+3. **FK Relation Expansion**  
+4. **자연어 검색 UI**
 
-이번 Step에서는 자연어 검색창과 Embedding을 제공하지 않습니다.
+이번 Step에서는 검색 Query 입력창을 제공하지 않습니다.
 """
 )

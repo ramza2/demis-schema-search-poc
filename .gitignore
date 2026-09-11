@@ -216,3 +216,10 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Embedding models / caches (do not commit model weights)
+models/
+model-cache/
+**/hf-cache/
+**/.cache/huggingface/
+**/.cache/torch/

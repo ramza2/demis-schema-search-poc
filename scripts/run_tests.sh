@@ -16,5 +16,8 @@ export CATALOG_DB_NAME="${CATALOG_DB_NAME:-schema_catalog}"
 export CATALOG_DB_USER="${CATALOG_DB_USER:-catalog_user}"
 export CATALOG_DB_PASSWORD="${CATALOG_DB_PASSWORD:-catalog_pass_change_me}"
 
+# Never download BGE-M3 during automated pytest.
+export EMBEDDING_PROVIDER="${EMBEDDING_PROVIDER:-fake}"
+
 cd backend
 python -m pytest -q "$@"
