@@ -85,14 +85,38 @@ HF_HUB_OFFLINE=true
 
 모델 파일은 Git에 커밋하지 않습니다 (`models/`, `model-cache/`는 `.gitignore`).
 
+Dockerfile은 **CPU-only torch 2.6+** 를 설치합니다.  
+(transformers가 `.bin` 체크포인트 로드 시 CVE-2025-32434 대응으로 torch>=2.6을 요구하기 때문입니다.  
+`model.safetensors`가 있으면 torch 2.5에서도 로드 가능합니다.)
+
 ### 모델 다운로드
 
 Backend 시작 시 자동 다운로드하지 않습니다 (lazy load).
 
 ```bash
-docker compose exec backend python scripts/download_embedding_model.py --output /models/local/bge-m3
-# 또는 host에서
+# host에서 다운로드 후 ./models 를 컨테이너에 마운트 (/models/local)
+mkdir -p models
 cd backend && python scripts/download_embedding_model.py --output ../models/bge-m3
+
+# (권장) safetensors 변환 — 컨테이너 네트워크가 막혀 torch를 올리지 못할 때 유용
+python - <<'PY'
+from transformers import AutoModel
+AutoModel.from_pretrained("../models/bge-m3", local_files_only=True).save_pretrained(
+    "../models/bge-m3", safe_serialization=True
+)
+PY
+
+# 또는 컨테이너 내부(외부망 가능 시)
+docker compose exec backend python scripts/download_embedding_model.py --output /models/local/bge-m3
+```
+
+Offline 실행 예:
+
+```bash
+EMBEDDING_PROVIDER=bge_m3 \
+EMBEDDING_MODEL_PATH=/models/local/bge-m3 \
+HF_HUB_OFFLINE=1 \
+docker compose up backend
 ```
 
 ## 5. API
@@ -149,8 +173,13 @@ docker compose exec -e EMBEDDING_PROVIDER=fake backend pytest -q
 실제 BGE-M3 smoke (선택):
 
 ```bash
-docker compose exec -e EMBEDDING_PROVIDER=bge_m3 -e RUN_BGE_M3_SMOKE=1 backend \
-  pytest -q tests/test_bge_m3_smoke.py
+# 로컬 모델이 ./models/bge-m3 에 있어야 합니다.
+docker compose exec \
+  -e EMBEDDING_PROVIDER=bge_m3 \
+  -e EMBEDDING_MODEL_PATH=/models/local/bge-m3 \
+  -e HF_HUB_OFFLINE=1 \
+  -e RUN_BGE_M3_SMOKE=1 \
+  backend pytest -q tests/test_bge_m3_smoke.py -s
 ```
 
 ## 8. pgvector

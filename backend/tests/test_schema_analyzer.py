@@ -161,10 +161,43 @@ def test_analyze_api_and_catalog_load(analyzed, catalog_engine) -> None:
     assert not first.get("error_message")
 
     with catalog_engine.connect() as conn:
-        tables = conn.execute(text("SELECT COUNT(*) FROM catalog_table WHERE active")).scalar_one()
-        columns = conn.execute(text("SELECT COUNT(*) FROM catalog_column WHERE active")).scalar_one()
-        relations = conn.execute(text("SELECT COUNT(*) FROM catalog_relation WHERE active")).scalar_one()
-        indexes = conn.execute(text("SELECT COUNT(*) FROM catalog_index WHERE active")).scalar_one()
+        source_id = conn.execute(
+            text("SELECT id FROM catalog_source WHERE source_name='medical_demo'")
+        ).scalar_one()
+        tables = conn.execute(
+            text(
+                "SELECT COUNT(*) FROM catalog_table WHERE active AND source_id = :sid"
+            ),
+            {"sid": source_id},
+        ).scalar_one()
+        columns = conn.execute(
+            text(
+                """
+                SELECT COUNT(*)
+                FROM catalog_column c
+                JOIN catalog_table t ON t.id = c.table_id
+                WHERE c.active AND t.source_id = :sid
+                """
+            ),
+            {"sid": source_id},
+        ).scalar_one()
+        relations = conn.execute(
+            text(
+                "SELECT COUNT(*) FROM catalog_relation WHERE active AND source_id = :sid"
+            ),
+            {"sid": source_id},
+        ).scalar_one()
+        indexes = conn.execute(
+            text(
+                """
+                SELECT COUNT(*)
+                FROM catalog_index i
+                JOIN catalog_table t ON t.id = i.table_id
+                WHERE i.active AND t.source_id = :sid
+                """
+            ),
+            {"sid": source_id},
+        ).scalar_one()
         sources = conn.execute(
             text("SELECT COUNT(*) FROM catalog_source WHERE source_name='medical_demo'")
         ).scalar_one()
@@ -185,10 +218,32 @@ def test_analyze_idempotency(analyzed, catalog_engine) -> None:
     assert first["run_id"] != second["run_id"]
 
     with catalog_engine.connect() as conn:
-        table_rows = conn.execute(text("SELECT COUNT(*) FROM catalog_table")).scalar_one()
-        column_rows = conn.execute(text("SELECT COUNT(*) FROM catalog_column")).scalar_one()
-        relation_rows = conn.execute(text("SELECT COUNT(*) FROM catalog_relation")).scalar_one()
-        run_rows = conn.execute(text("SELECT COUNT(*) FROM catalog_analysis_run")).scalar_one()
+        source_id = conn.execute(
+            text("SELECT id FROM catalog_source WHERE source_name='medical_demo'")
+        ).scalar_one()
+        table_rows = conn.execute(
+            text("SELECT COUNT(*) FROM catalog_table WHERE source_id = :sid"),
+            {"sid": source_id},
+        ).scalar_one()
+        column_rows = conn.execute(
+            text(
+                """
+                SELECT COUNT(*)
+                FROM catalog_column c
+                JOIN catalog_table t ON t.id = c.table_id
+                WHERE t.source_id = :sid
+                """
+            ),
+            {"sid": source_id},
+        ).scalar_one()
+        relation_rows = conn.execute(
+            text("SELECT COUNT(*) FROM catalog_relation WHERE source_id = :sid"),
+            {"sid": source_id},
+        ).scalar_one()
+        run_rows = conn.execute(
+            text("SELECT COUNT(*) FROM catalog_analysis_run WHERE source_id = :sid"),
+            {"sid": source_id},
+        ).scalar_one()
     assert table_rows == 24
     assert column_rows == first["columns"]
     assert relation_rows == first["relations"]
@@ -344,6 +399,18 @@ def test_relation_natural_key_allows_duplicate_constraint_names() -> None:
             session.add(source)
             session.commit()
             session.refresh(source)
+        else:
+            # Prior failed runs may leave active fixture tables; deactivate first.
+            for table in session.scalars(
+                select(CatalogTable).where(CatalogTable.source_id == source.id)
+            ).all():
+                table.active = False
+            for rel in session.scalars(
+                select(CatalogRelation).where(CatalogRelation.source_id == source.id)
+            ).all():
+                rel.active = False
+            session.commit()
+            session.refresh(source)
 
         def _col(table: str, name: str, ordinal: int = 1) -> InspectedColumn:
             return InspectedColumn(
@@ -416,4 +483,21 @@ def test_relation_natural_key_allows_duplicate_constraint_names() -> None:
         ).all()
         assert len(tables) == 3
     finally:
+        # Keep fixture source isolated; deactivate so medical_demo counts stay clean.
+        try:
+            fixture = session.scalar(
+                select(CatalogSource).where(CatalogSource.source_name == "fk_collision_fixture")
+            )
+            if fixture is not None:
+                for table in session.scalars(
+                    select(CatalogTable).where(CatalogTable.source_id == fixture.id)
+                ).all():
+                    table.active = False
+                for rel in session.scalars(
+                    select(CatalogRelation).where(CatalogRelation.source_id == fixture.id)
+                ).all():
+                    rel.active = False
+                session.commit()
+        except Exception:  # noqa: BLE001
+            session.rollback()
         session.close()

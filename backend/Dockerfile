@@ -15,9 +15,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     git \
     && rm -rf /var/lib/apt/lists/*
 
-# CPU-only PyTorch first (avoid CUDA runtime dependency)
+# CPU-only PyTorch first (avoid CUDA runtime dependency).
+# torch>=2.6 required by transformers to load .bin checkpoints safely (CVE-2025-32434).
 RUN pip install --no-cache-dir \
-    torch==2.5.1 \
+    torch==2.6.0 \
     --index-url https://download.pytorch.org/whl/cpu
 
 COPY requirements.txt .

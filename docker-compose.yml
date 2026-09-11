@@ -77,6 +77,10 @@ services:
     volumes:
       - embedding_model_cache:/models/hf-cache
       - ./models:/models/local:ro
+      # Live-mount app/tests for PoC iteration (image still has baked deps).
+      - ./backend/app:/app/app
+      - ./backend/tests:/app/tests
+      - ./backend/scripts:/app/scripts
     ports:
       # Host access / debugging only
       - "${BACKEND_EXTERNAL_PORT:-8000}:8000"

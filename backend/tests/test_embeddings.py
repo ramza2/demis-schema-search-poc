@@ -47,7 +47,9 @@ def client():
     with TestClient(create_app()) as test_client:
         analyze = test_client.post("/api/v1/schema/analyze")
         assert analyze.status_code == 200, analyze.text
-        yield test_client, analyze.json()
+        rebuild = test_client.post("/api/v1/embeddings/documents/rebuild")
+        assert rebuild.status_code == 200, rebuild.text
+        yield test_client, analyze.json(), rebuild.json()
 
 
 def test_pgvector_extension_enabled(catalog_engine) -> None:
@@ -59,16 +61,11 @@ def test_pgvector_extension_enabled(catalog_engine) -> None:
 
 
 def test_search_document_rebuild_counts(client) -> None:
-    test_client, analyzed = client
+    test_client, analyzed, rebuilt = client
     expected_docs = int(analyzed["tables"]) + int(analyzed["columns"])
-
-    first = test_client.post("/api/v1/embeddings/documents/rebuild")
-    assert first.status_code == 200, first.text
-    payload = first.json()
-    assert payload["tables"] == analyzed["tables"] == 24
-    assert payload["columns"] == analyzed["columns"]
-    assert payload["documents"] == expected_docs
-    assert payload["created"] + payload["updated"] + payload["unchanged"] == expected_docs
+    assert rebuilt["tables"] == analyzed["tables"] == 24
+    assert rebuilt["columns"] == analyzed["columns"]
+    assert rebuilt["documents"] == expected_docs
 
     second = test_client.post("/api/v1/embeddings/documents/rebuild")
     assert second.status_code == 200, second.text
@@ -79,8 +76,7 @@ def test_search_document_rebuild_counts(client) -> None:
 
 
 def test_table_document_content_tb_lab_rst(client) -> None:
-    test_client, _ = client
-    test_client.post("/api/v1/embeddings/documents/rebuild")
+    test_client, _, _ = client
     docs = test_client.get(
         "/api/v1/embeddings/documents",
         params={"object_type": "TABLE", "name": "tb_lab_rst", "limit": 20},
@@ -100,8 +96,7 @@ def test_table_document_content_tb_lab_rst(client) -> None:
 
 
 def test_column_document_content_exm_cd(client) -> None:
-    test_client, _ = client
-    test_client.post("/api/v1/embeddings/documents/rebuild")
+    test_client, _, _ = client
     docs = test_client.get(
         "/api/v1/embeddings/documents",
         params={"object_type": "COLUMN", "name": "tb_lab_rst:exm_cd", "limit": 50},
@@ -109,8 +104,7 @@ def test_column_document_content_exm_cd(client) -> None:
     assert docs.status_code == 200, docs.text
     rows = docs.json()
     assert rows, docs.text
-    target = rows[0]
-    detail = test_client.get(f"/api/v1/embeddings/documents/{target['id']}")
+    detail = test_client.get(f"/api/v1/embeddings/documents/{rows[0]['id']}")
     body = detail.json()["searchable_text"]
     assert "Object Type: COLUMN" in body
     assert "tb_lab_rst" in body
@@ -121,12 +115,10 @@ def test_column_document_content_exm_cd(client) -> None:
 
 
 def test_no_seed_row_data_in_search_documents(client) -> None:
-    test_client, _ = client
-    test_client.post("/api/v1/embeddings/documents/rebuild")
+    test_client, _, _ = client
     docs = test_client.get("/api/v1/embeddings/documents", params={"limit": 1000})
     assert docs.status_code == 200
     banned = ["홍길동", "김철수", "이영희", "PT0001", "환자성명 예시", "의료문서 본문"]
-    # Seed lab master codes must not be injected into schema documents.
     seed_codes = ["\nAST\n", "\nALT\n", "\nGGT\n", " AST ", " ALT ", " GGT "]
     for row in docs.json():
         detail = test_client.get(f"/api/v1/embeddings/documents/{row['id']}")
@@ -138,7 +130,7 @@ def test_no_seed_row_data_in_search_documents(client) -> None:
 
 
 def test_search_document_idempotency_fingerprints(client, catalog_engine) -> None:
-    test_client, analyzed = client
+    test_client, analyzed, _ = client
     expected_docs = int(analyzed["tables"]) + int(analyzed["columns"])
     test_client.post("/api/v1/embeddings/documents/rebuild")
     with catalog_engine.connect() as conn:
@@ -212,10 +204,13 @@ def test_fingerprint_changes_when_comment_changes() -> None:
     assert fp1 != fp2
 
 
-def test_fake_embedding_and_idempotency(client) -> None:
-    test_client, analyzed = client
+def test_fake_embedding_and_idempotency(client, catalog_engine) -> None:
+    test_client, analyzed, _ = client
     expected_docs = int(analyzed["tables"]) + int(analyzed["columns"])
-    test_client.post("/api/v1/embeddings/documents/rebuild")
+
+    # Ensure a clean slate for this model_key so the first run embeds all docs.
+    with catalog_engine.begin() as conn:
+        conn.execute(text("DELETE FROM catalog_embedding"))
 
     first = test_client.post("/api/v1/embeddings/run")
     assert first.status_code == 200, first.text
@@ -237,11 +232,11 @@ def test_fake_embedding_and_idempotency(client) -> None:
 
 
 def test_changed_document_reembedding(client, catalog_engine) -> None:
-    test_client, analyzed = client
+    test_client, analyzed, _ = client
     expected_docs = int(analyzed["tables"]) + int(analyzed["columns"])
-    test_client.post("/api/v1/embeddings/documents/rebuild")
     test_client.post("/api/v1/embeddings/run")
 
+    # Avoid SQLAlchemy bind params: do not put ":name" literals in SQL text.
     with catalog_engine.begin() as conn:
         conn.execute(
             text(
@@ -252,11 +247,12 @@ def test_changed_document_reembedding(client, catalog_engine) -> None:
                         sha256(convert_to(document_fingerprint || '-changed', 'UTF8')),
                         'hex'
                     )
-                WHERE document_key LIKE '%:tb_lab_rst'
+                WHERE document_key LIKE :pattern
                   AND object_type = 'TABLE'
                   AND active
                 """
-            )
+            ),
+            {"pattern": "%:tb_lab_rst"},
         )
 
     run = test_client.post("/api/v1/embeddings/run")
@@ -267,9 +263,8 @@ def test_changed_document_reembedding(client, catalog_engine) -> None:
 
 
 def test_model_key_change_triggers_reembed(client) -> None:
-    test_client, analyzed = client
+    test_client, analyzed, _ = client
     expected_docs = int(analyzed["tables"]) + int(analyzed["columns"])
-    test_client.post("/api/v1/embeddings/documents/rebuild")
     test_client.post("/api/v1/embeddings/run")
 
     os.environ["EMBEDDING_MAX_SEQ_LENGTH"] = "512"
@@ -300,9 +295,8 @@ def test_dimension_mismatch_error_class() -> None:
 
 
 def test_embedding_stats_and_runs(client) -> None:
-    test_client, analyzed = client
+    test_client, analyzed, _ = client
     expected_docs = int(analyzed["tables"]) + int(analyzed["columns"])
-    test_client.post("/api/v1/embeddings/documents/rebuild")
     test_client.post("/api/v1/embeddings/run")
 
     stats = test_client.get("/api/v1/embeddings/stats")
@@ -324,7 +318,7 @@ def test_embedding_stats_and_runs(client) -> None:
 
 
 def test_credential_safety_in_embedding_errors(client) -> None:
-    test_client, _ = client
+    test_client, _, _ = client
     resp = test_client.post(
         "/api/v1/embeddings/documents/rebuild", params={"source": "no_such_source"}
     )

@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections import defaultdict
 from datetime import datetime, timezone
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
 from app.analyzers.base import SchemaSnapshot
@@ -413,9 +413,12 @@ class CatalogWriter:
                     existing.last_seen_at = now
                     existing.last_run_id = run_id
                     existing.active = True
-                    for old in list(existing.columns):
-                        self.session.delete(old)
-                    self.session.flush()
+                    self.session.execute(
+                        delete(CatalogKeyConstraintColumn).where(
+                            CatalogKeyConstraintColumn.constraint_id == existing.id
+                        )
+                    )
+                    self.session.expire(existing, ["columns"])
 
                 for col in cols:
                     col_id = column_id_by_key.get((schema_name, table_name, col.column_name))
@@ -474,9 +477,12 @@ class CatalogWriter:
                 existing.last_seen_at = now
                 existing.last_run_id = run_id
                 existing.active = True
-                for old in list(existing.columns):
-                    self.session.delete(old)
-                self.session.flush()
+                self.session.execute(
+                    delete(CatalogRelationColumn).where(
+                        CatalogRelationColumn.relation_id == existing.id
+                    )
+                )
+                self.session.expire(existing, ["columns"])
 
             for col in fk.columns:
                 src_col_id = column_id_by_key.get(
@@ -540,9 +546,10 @@ class CatalogWriter:
                 existing.last_seen_at = now
                 existing.last_run_id = run_id
                 existing.active = True
-                for old in list(existing.columns):
-                    self.session.delete(old)
-                self.session.flush()
+                self.session.execute(
+                    delete(CatalogIndexColumn).where(CatalogIndexColumn.index_id == existing.id)
+                )
+                self.session.expire(existing, ["columns"])
 
             for col in ix.columns:
                 self.session.add(
