@@ -210,6 +210,97 @@ def test_core_relationship_joins(medical_engine) -> None:
     assert joined > 0
 
 
+EXPECTED_INDEXES = [
+    "ix_pt_nm",
+    "ix_pt_brth",
+    "ix_enc_pt",
+    "ix_enc_dt",
+    "ix_enc_dept",
+    "ix_enc_typ",
+    "ix_adm_pt",
+    "ix_adm_ward",
+    "ix_dgn_enc",
+    "ix_dgn_pt",
+    "ix_dgn_cd",
+    "ix_dgn_dt",
+    "ix_proc_enc",
+    "ix_proc_pt",
+    "ix_ord_enc",
+    "ix_ord_pt",
+    "ix_ord_typ",
+    "ix_ord_dt",
+    "ix_ord_dtl_no",
+    "ix_lab_ord_enc",
+    "ix_lab_ord_pt",
+    "ix_lab_ord_exm",
+    "ix_lab_rst_pt",
+    "ix_lab_rst_exm",
+    "ix_lab_rst_dt",
+    "ix_med_ord_pt",
+    "ix_med_ord_drug",
+    "ix_med_ord_enc",
+    "ix_img_ord_pt",
+    "ix_img_ord_enc",
+    "ix_img_ord_cd",
+    "ix_img_rpt_pt",
+    "ix_img_rpt_dt",
+    "ix_cln_doc_enc",
+    "ix_cln_doc_pt",
+    "ix_cln_doc_typ",
+    "ix_lab_mst_cat",
+    "ix_lab_ref_exm",
+    "ix_prov_dept",
+    "ix_code_grp",
+]
+
+# Business-critical columns that Schema Analyzer should always see with comments.
+REQUIRED_COLUMN_COMMENTS = [
+    ("tb_pt_mst", "pt_no"),
+    ("tb_pt_mst", "pt_nm"),
+    ("tb_pt_mst", "brth_dt"),
+    ("tb_pt_mst", "sex_cd"),
+    ("tb_enc_hist", "enc_id"),
+    ("tb_enc_hist", "pt_no"),
+    ("tb_enc_hist", "enc_typ"),
+    ("tb_enc_hist", "adm_dt"),
+    ("tb_dgn_hist", "dgn_cd"),
+    ("tb_dgn_hist", "dgn_dt"),
+    ("tb_dgn_hist", "dgn_typ"),
+    ("tb_ord_hdr", "ord_no"),
+    ("tb_ord_hdr", "ord_typ"),
+    ("tb_ord_hdr", "ord_dt"),
+    ("tb_lab_ord", "exm_cd"),
+    ("tb_lab_rst", "exm_cd"),
+    ("tb_lab_rst", "rst_val"),
+    ("tb_lab_rst", "rst_num"),
+    ("tb_lab_rst", "rst_dt"),
+    ("tb_lab_mst", "exm_cd"),
+    ("tb_lab_mst", "exm_nm"),
+    ("tb_lab_mst", "exm_cat"),
+    ("tb_med_ord", "drug_cd"),
+    ("tb_drug_mst", "drug_cd"),
+    ("tb_drug_mst", "drug_nm"),
+    ("tb_img_ord", "img_cd"),
+    ("tb_img_rpt", "find_txt"),
+    ("tb_img_rpt", "impr_txt"),
+    ("tb_cln_doc", "doc_typ_cd"),
+    ("tb_cln_doc", "doc_ttl"),
+    ("tb_doc_type", "doc_typ_nm"),
+]
+
+# Evaluation-query leakage phrases must not appear in schema comments.
+FORBIDDEN_COMMENT_PHRASES = [
+    "검색의 핵심",
+    "검색에 사용",
+    "검색에 활용",
+    "검색 핵심",
+    "검색의 기준",
+    "핵심 기준 테이블",
+    "진단 이력 검색",
+    "간수치·혈당·신장기능 검색",
+]
+
+
 def test_table_and_column_comments_exist(medical_engine) -> None:
     with medical_engine.connect() as conn:
         table_comments = conn.execute(
@@ -236,3 +327,128 @@ def test_table_and_column_comments_exist(medical_engine) -> None:
         ).scalar_one()
     assert table_comments >= 20
     assert column_comments >= 50
+
+
+def test_all_required_tables_have_comments(medical_engine) -> None:
+    with medical_engine.connect() as conn:
+        rows = conn.execute(
+            text(
+                """
+                SELECT c.relname AS table_name,
+                       COALESCE(d.description, '') AS table_comment
+                FROM pg_catalog.pg_class c
+                JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
+                LEFT JOIN pg_catalog.pg_description d
+                  ON d.objoid = c.oid AND d.objsubid = 0
+                WHERE n.nspname = 'public' AND c.relkind = 'r'
+                """
+            )
+        ).fetchall()
+    comments = {r[0]: (r[1] or "").strip() for r in rows}
+    missing = [t for t in REQUIRED_TABLES if not comments.get(t)]
+    assert not missing, f"Tables missing COMMENT: {missing}"
+
+
+def test_required_business_columns_have_comments(medical_engine) -> None:
+    with medical_engine.connect() as conn:
+        rows = conn.execute(
+            text(
+                """
+                SELECT c.relname AS table_name,
+                       a.attname AS column_name,
+                       COALESCE(d.description, '') AS column_comment
+                FROM pg_catalog.pg_class c
+                JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
+                JOIN pg_catalog.pg_attribute a ON a.attrelid = c.oid
+                LEFT JOIN pg_catalog.pg_description d
+                  ON d.objoid = c.oid AND d.objsubid = a.attnum
+                WHERE n.nspname = 'public'
+                  AND c.relkind = 'r'
+                  AND a.attnum > 0
+                  AND NOT a.attisdropped
+                """
+            )
+        ).fetchall()
+    commented = {(r[0], r[1]): (r[2] or "").strip() for r in rows}
+    missing = [f"{t}.{c}" for t, c in REQUIRED_COLUMN_COMMENTS if not commented.get((t, c))]
+    assert not missing, f"Business columns missing COMMENT: {missing}"
+
+
+def test_expected_indexes_exist(medical_engine) -> None:
+    with medical_engine.connect() as conn:
+        rows = conn.execute(
+            text(
+                """
+                SELECT indexname
+                FROM pg_indexes
+                WHERE schemaname = 'public'
+                """
+            )
+        ).fetchall()
+    existing = {r[0] for r in rows}
+    missing = [idx for idx in EXPECTED_INDEXES if idx not in existing]
+    assert not missing, f"Missing indexes: {missing}"
+
+
+def test_column_comment_coverage(medical_engine) -> None:
+    """Schema Analyzer relies on comments; require high coverage on business columns."""
+    with medical_engine.connect() as conn:
+        total_cols = conn.execute(
+            text(
+                """
+                SELECT COUNT(*)
+                FROM information_schema.columns
+                WHERE table_schema = 'public'
+                """
+            )
+        ).scalar_one()
+        commented_cols = conn.execute(
+            text(
+                """
+                SELECT COUNT(*)
+                FROM pg_catalog.pg_description d
+                JOIN pg_catalog.pg_class c ON c.oid = d.objoid
+                JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
+                WHERE n.nspname = 'public'
+                  AND c.relkind = 'r'
+                  AND d.objsubid > 0
+                  AND COALESCE(d.description, '') <> ''
+                """
+            )
+        ).scalar_one()
+    assert total_cols > 0
+    coverage = commented_cols / total_cols
+    # Mock DB is fully documented; keep threshold high for analyzer input quality.
+    assert coverage >= 0.90, (
+        f"Column COMMENT coverage too low: {coverage:.1%} "
+        f"({commented_cols}/{total_cols}); expected >= 90%"
+    )
+
+
+def test_comments_have_no_evaluation_leakage(medical_engine) -> None:
+    with medical_engine.connect() as conn:
+        rows = conn.execute(
+            text(
+                """
+                SELECT c.relname AS object_name,
+                       CASE WHEN d.objsubid = 0 THEN NULL ELSE a.attname END AS column_name,
+                       d.description
+                FROM pg_catalog.pg_description d
+                JOIN pg_catalog.pg_class c ON c.oid = d.objoid
+                JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
+                LEFT JOIN pg_catalog.pg_attribute a
+                  ON a.attrelid = c.oid AND a.attnum = d.objsubid
+                WHERE n.nspname = 'public'
+                  AND c.relkind = 'r'
+                  AND COALESCE(d.description, '') <> ''
+                """
+            )
+        ).fetchall()
+    leaks: list[str] = []
+    for object_name, column_name, description in rows:
+        text_value = description or ""
+        for phrase in FORBIDDEN_COMMENT_PHRASES:
+            if phrase in text_value:
+                target = object_name if column_name is None else f"{object_name}.{column_name}"
+                leaks.append(f"{target}: contains '{phrase}'")
+    assert not leaks, "Evaluation-leakage phrases found in COMMENTs:\n" + "\n".join(leaks)

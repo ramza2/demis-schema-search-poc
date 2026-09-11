@@ -10,6 +10,7 @@ services:
       SEED_PATIENT_COUNT: ${SEED_PATIENT_COUNT:-200}
       SEED_RANDOM_SEED: ${SEED_RANDOM_SEED:-42}
     ports:
+      # Host access / debugging only
       - "${MEDICAL_DB_EXTERNAL_PORT:-5433}:5432"
     volumes:
       - medical_db_data:/var/lib/postgresql/data
@@ -30,6 +31,7 @@ services:
       POSTGRES_USER: ${CATALOG_DB_USER:-catalog_user}
       POSTGRES_PASSWORD: ${CATALOG_DB_PASSWORD:-catalog_pass_change_me}
     ports:
+      # Host access / debugging only
       - "${CATALOG_DB_EXTERNAL_PORT:-5434}:5432"
     volumes:
       - catalog_db_data:/var/lib/postgresql/data
@@ -47,23 +49,21 @@ services:
     build:
       context: ./backend
     container_name: demis-backend
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
     environment:
-      # Published host ports via host-gateway for broad Docker compatibility
-      # (Docker Desktop, Linux Compose, nested/DinD environments).
-      MEDICAL_DB_HOST: host.docker.internal
-      MEDICAL_DB_PORT: ${MEDICAL_DB_EXTERNAL_PORT:-5433}
+      # Compose service DNS (internal network)
+      MEDICAL_DB_HOST: medical-db
+      MEDICAL_DB_PORT: 5432
       MEDICAL_DB_NAME: ${MEDICAL_DB_NAME:-medical_demo}
       MEDICAL_DB_USER: ${MEDICAL_DB_USER:-medical_user}
       MEDICAL_DB_PASSWORD: ${MEDICAL_DB_PASSWORD:-medical_pass_change_me}
-      CATALOG_DB_HOST: host.docker.internal
-      CATALOG_DB_PORT: ${CATALOG_DB_EXTERNAL_PORT:-5434}
+      CATALOG_DB_HOST: catalog-db
+      CATALOG_DB_PORT: 5432
       CATALOG_DB_NAME: ${CATALOG_DB_NAME:-schema_catalog}
       CATALOG_DB_USER: ${CATALOG_DB_USER:-catalog_user}
       CATALOG_DB_PASSWORD: ${CATALOG_DB_PASSWORD:-catalog_pass_change_me}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
     ports:
+      # Host access / debugging only
       - "${BACKEND_EXTERNAL_PORT:-8000}:8000"
     depends_on:
       medical-db:
@@ -83,11 +83,11 @@ services:
     build:
       context: ./frontend
     container_name: demis-frontend
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
     environment:
-      BACKEND_URL: http://host.docker.internal:${BACKEND_EXTERNAL_PORT:-8000}
+      # Compose service DNS (internal network)
+      BACKEND_URL: http://backend:8000
     ports:
+      # Host access / debugging only
       - "${FRONTEND_EXTERNAL_PORT:-8501}:8501"
     depends_on:
       backend:

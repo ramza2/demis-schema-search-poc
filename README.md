@@ -49,23 +49,28 @@ Test Medical DB
 ## 4. 전체 Architecture (Step 1)
 
 ```text
-┌────────────┐   HTTP via host ports   ┌────────────┐
-│  frontend  │ ──────────────────────► │  backend   │
-│ (Streamlit)│                         │  (FastAPI) │
-└────────────┘                         └─────┬──────┘
-                                             │
-                       host.docker.internal  │
-                 ┌───────────────────────────┼───────────────────┐
-                 ▼                                               ▼
-        ┌────────────────┐                             ┌─────────────────┐
-        │   medical-db   │                             │   catalog-db    │
-        │ medical_demo   │                             │ schema_catalog  │
-        │ (+ init seed)  │                             │ (pgvector 가능) │
-        └────────────────┘                             └─────────────────┘
+┌────────────┐  Compose DNS :8000  ┌────────────┐
+│  frontend  │ ──────────────────► │  backend   │
+│ (Streamlit)│                     │  (FastAPI) │
+└────────────┘                     └─────┬──────┘
+                                         │
+                    Compose DNS :5432    │
+              ┌──────────────────────────┼──────────────────────────┐
+              ▼                                                     ▼
+     ┌────────────────┐                                   ┌─────────────────┐
+     │   medical-db   │                                   │   catalog-db    │
+     │ medical_demo   │                                   │ schema_catalog  │
+     │ (+ init seed)  │                                   │ (pgvector 가능) │
+     └────────────────┘                                   └─────────────────┘
 ```
 
-서비스 간 DB/API 연결은 published port + `host.docker.internal`을 사용합니다.
-(Windows/macOS Docker Desktop 및 Linux Compose, 일부 DinD 환경 호환)
+컨테이너 간 연결은 Docker Compose **service DNS**를 사용합니다.
+
+- `backend → medical-db:5432`
+- `backend → catalog-db:5432`
+- `frontend → backend:8000`
+
+호스트 published port(`5433`, `5434`, `8000`, `8501`)는 로컬 접속/디버깅용입니다.
 ## 5. 기술스택
 
 | 영역 | 기술 |

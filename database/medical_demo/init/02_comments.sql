@@ -50,7 +50,7 @@ COMMENT ON COLUMN TB_DGN_CD_MST.CAT_CD IS '진단분류코드';
 COMMENT ON COLUMN TB_DGN_CD_MST.USE_YN IS '사용여부';
 
 -- TB_LAB_MST
-COMMENT ON TABLE TB_LAB_MST IS '임상검사 항목 마스터. AST/ALT 등 검사코드와 검사명을 관리한다. 간수치·혈당·신장기능 검색의 핵심 기준 테이블이다.';
+COMMENT ON TABLE TB_LAB_MST IS '임상검사 항목 마스터. 검사코드, 한글·영문 검사명, 검사분류, 검체유형, 결과단위 및 검사방법을 관리한다.';
 COMMENT ON COLUMN TB_LAB_MST.EXM_CD IS '검사코드';
 COMMENT ON COLUMN TB_LAB_MST.EXM_NM IS '검사명(한글)';
 COMMENT ON COLUMN TB_LAB_MST.EXM_NM_EN IS '검사명(영문)';
@@ -144,7 +144,7 @@ COMMENT ON COLUMN TB_ADM_HIST.DSCH_TYP IS '퇴원유형';
 COMMENT ON COLUMN TB_ADM_HIST.ADM_PATH IS '입원경로';
 
 -- TB_DGN_HIST
-COMMENT ON TABLE TB_DGN_HIST IS '진단 이력. Encounter별 주진단/부진단 코드를 저장한다. 고혈압 등 진단 이력 검색에 사용된다.';
+COMMENT ON TABLE TB_DGN_HIST IS '진단 이력. Encounter별 주진단·부진단 코드, 진단일시, 진단유형 및 진단 의료진 정보를 저장한다.';
 COMMENT ON COLUMN TB_DGN_HIST.DGN_ID IS '진단이력ID';
 COMMENT ON COLUMN TB_DGN_HIST.ENC_ID IS 'Encounter ID';
 COMMENT ON COLUMN TB_DGN_HIST.PT_NO IS '환자번호';
@@ -203,7 +203,7 @@ COMMENT ON COLUMN TB_LAB_ORD.COLL_DT IS '채혈/검체채취일시';
 COMMENT ON COLUMN TB_LAB_ORD.ORD_STS IS '검사오더상태';
 
 -- TB_LAB_RST
-COMMENT ON TABLE TB_LAB_RST IS '환자의 임상검사 결과를 저장하는 테이블. 간수치, 혈당, 신장기능 등 결과값과 결과일시를 보관한다.';
+COMMENT ON TABLE TB_LAB_RST IS '환자의 임상검사 결과를 저장하는 테이블. 검사결과값(문자·수치), 결과단위, 이상여부 및 결과일시를 보관한다.';
 COMMENT ON COLUMN TB_LAB_RST.LAB_RST_ID IS '검사결과ID';
 COMMENT ON COLUMN TB_LAB_RST.LAB_ORD_ID IS '검사오더ID';
 COMMENT ON COLUMN TB_LAB_RST.PT_NO IS '환자번호';
