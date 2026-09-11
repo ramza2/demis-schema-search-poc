@@ -1,0 +1,4 @@
+semantic_no_expansion recorded the highest Hit@5 (0.933).
+hybrid_expansion recorded the highest MRR (0.829).
+Hybrid expansion Hit@5 delta vs hybrid_no_expansion: +0.000.
+Semantic expansion Hit@5 delta vs semantic_no_expansion: +0.000.
