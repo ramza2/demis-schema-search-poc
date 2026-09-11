@@ -57,12 +57,30 @@ class ExpansionResult:
     expanded_query: str = ""
 
 
+def _is_korean_or_phrase(term: str) -> bool:
+    """Korean text and multi-word phrases keep natural substring/phrase matching."""
+    if any(ch.isspace() for ch in term):
+        return True
+    return bool(re.search(r"[가-힣]", term))
+
+
 def _term_hits(term: str, query: str, query_lower: str) -> bool:
+    """Match triggers without English substring false positives.
+
+    Latin/alphanumeric tokens (AST, ALT, BUN, HbA1c, ...) require word boundaries.
+    Korean expressions and whitespace phrases keep phrase matching.
+    """
     term_l = term.lower()
     if not term_l:
         return False
-    if term_l in query_lower:
-        return True
+    if _is_korean_or_phrase(term):
+        return term_l in query_lower or bool(
+            re.search(
+                rf"(?i)(?<![A-Za-z0-9_]){re.escape(term)}(?![A-Za-z0-9_])",
+                query,
+            )
+        )
+    # English / numeric token triggers: independent token only.
     return bool(
         re.search(
             rf"(?i)(?<![A-Za-z0-9_]){re.escape(term)}(?![A-Za-z0-9_])",

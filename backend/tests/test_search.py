@@ -438,6 +438,32 @@ def test_search_timings_include_semantic_search_ms(client) -> None:
     assert any(r.get("schema_name") == "public" for r in rows)
 
 
+
+def test_english_abbrev_not_substring_false_positive() -> None:
+    from app.services.search.terminology import clear_concept_cache, expand_query
+
+    clear_concept_cache()
+    # AST must not match inside "fasting"; ALT not inside "salt"
+    fasting = expand_query("fasting blood sugar")
+    assert "liver_function" not in fasting.matched_concepts
+    assert "blood_glucose" in fasting.matched_concepts
+
+    salt = expand_query("salt restriction")
+    assert "liver_function" not in salt.matched_concepts
+
+    bundle = expand_query("bundle test")
+    assert "renal_function" not in bundle.matched_concepts
+
+
+def test_english_abbrev_word_boundary_triggers() -> None:
+    from app.services.search.terminology import clear_concept_cache, expand_query
+
+    clear_concept_cache()
+    assert "liver_function" in expand_query("AST 수치").matched_concepts
+    assert "liver_function" in expand_query("ALT 검사").matched_concepts
+    assert "renal_function" in expand_query("BUN 결과").matched_concepts
+
+
 def test_keyword_mode_timings(client) -> None:
     resp = client.post(
         "/api/v1/search/schema",
