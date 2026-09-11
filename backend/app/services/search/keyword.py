@@ -18,6 +18,7 @@ class KeywordHit:
     document_id: int
     document_key: str
     object_type: str
+    schema_name: str | None
     table_name: str | None
     column_name: str | None
     searchable_text: str
@@ -84,6 +85,7 @@ def keyword_search(
             d.document_key,
             d.object_type,
             d.searchable_text,
+            t.schema_name,
             t.table_name,
             c.column_name,
             CASE WHEN :fts <> '' THEN ts_rank(
@@ -153,6 +155,7 @@ def keyword_search(
                 document_id=int(row["document_id"]),
                 document_key=row["document_key"],
                 object_type=row["object_type"],
+                schema_name=row.get("schema_name"),
                 table_name=row["table_name"],
                 column_name=row["column_name"],
                 searchable_text=row["searchable_text"] or "",

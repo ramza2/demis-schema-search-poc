@@ -1,4 +1,4 @@
-"""Schema search API (Step 4) — discovery only, no NL→SQL."""
+"""Schema search API (Step 4 / 4.1) — discovery only, no NL→SQL."""
 
 from __future__ import annotations
 
@@ -52,6 +52,7 @@ def search_schema(body: SchemaSearchRequest) -> SchemaSearchResponse:
                     rank=d.rank,
                     match_type=d.match_type,
                     object_type=d.object_type,
+                    schema_name=d.schema_name,
                     table_name=d.table_name,
                     column_name=d.column_name,
                     document_key=d.document_key,
@@ -70,12 +71,15 @@ def search_schema(body: SchemaSearchRequest) -> SchemaSearchResponse:
                 RelatedTableOut(
                     table_name=r.table_name,
                     schema_name=r.schema_name,
+                    seed_schema=r.seed_schema,
                     seed_table=r.seed_table,
                     hop_distance=r.hop_distance,
                     match_type=r.match_type,
                     relation_path=[
                         RelationHopOut(
+                            from_schema=h.from_schema,
                             from_table=h.from_table,
+                            to_schema=h.to_schema,
                             to_table=h.to_table,
                             constraint_name=h.constraint_name,
                             direction=h.direction,
