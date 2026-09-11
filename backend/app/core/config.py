@@ -4,8 +4,18 @@ from __future__ import annotations
 
 from functools import lru_cache
 from pathlib import Path
+from typing import Any
 
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+def _empty_as_none(value: Any) -> Any:
+    if value is None:
+        return None
+    if isinstance(value, str) and value.strip() == "":
+        return None
+    return value
 
 
 class Settings(BaseSettings):
@@ -39,6 +49,16 @@ class Settings(BaseSettings):
     embedding_normalize: bool = True
     embedding_num_threads: int | None = None
     hf_hub_offline: bool = False
+
+    @field_validator(
+        "embedding_model_path",
+        "embedding_model_revision",
+        "embedding_num_threads",
+        mode="before",
+    )
+    @classmethod
+    def _optional_empty_to_none(cls, value: Any) -> Any:
+        return _empty_as_none(value)
 
     @property
     def medical_db_url(self) -> str:
