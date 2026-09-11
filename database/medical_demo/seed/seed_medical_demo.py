@@ -22,14 +22,20 @@ def env(name: str, default: str | None = None) -> str:
 
 
 def connect() -> psycopg.Connection:
-    return psycopg.connect(
-        host=env("MEDICAL_DB_HOST", "localhost"),
-        port=int(env("MEDICAL_DB_PORT", "5432")),
-        dbname=env("MEDICAL_DB_NAME", "medical_demo"),
-        user=env("MEDICAL_DB_USER", "medical_user"),
-        password=env("MEDICAL_DB_PASSWORD"),
-        row_factory=dict_row,
-    )
+    # During docker-entrypoint initdb, Postgres may only expose a Unix socket.
+    host = os.getenv("MEDICAL_DB_HOST", "localhost")
+    kwargs: dict[str, Any] = {
+        "dbname": env("MEDICAL_DB_NAME", "medical_demo"),
+        "user": env("MEDICAL_DB_USER", "medical_user"),
+        "password": env("MEDICAL_DB_PASSWORD"),
+        "row_factory": dict_row,
+    }
+    if host.startswith("/"):
+        kwargs["host"] = host
+    else:
+        kwargs["host"] = host
+        kwargs["port"] = int(env("MEDICAL_DB_PORT", "5432"))
+    return psycopg.connect(**kwargs)
 
 
 DEPTS = [

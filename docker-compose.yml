@@ -1,22 +1,24 @@
 services:
   medical-db:
-    image: postgres:16-alpine
+    build:
+      context: ./database/medical_demo
     container_name: demis-medical-db
     environment:
       POSTGRES_DB: ${MEDICAL_DB_NAME:-medical_demo}
       POSTGRES_USER: ${MEDICAL_DB_USER:-medical_user}
       POSTGRES_PASSWORD: ${MEDICAL_DB_PASSWORD:-medical_pass_change_me}
+      SEED_PATIENT_COUNT: ${SEED_PATIENT_COUNT:-200}
+      SEED_RANDOM_SEED: ${SEED_RANDOM_SEED:-42}
     ports:
       - "${MEDICAL_DB_EXTERNAL_PORT:-5433}:5432"
     volumes:
       - medical_db_data:/var/lib/postgresql/data
-      - ./database/medical_demo/init:/docker-entrypoint-initdb.d:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
-      interval: 5s
+      interval: 10s
       timeout: 5s
-      retries: 20
-      start_period: 10s
+      retries: 60
+      start_period: 120s
     networks:
       - demis-net
 
@@ -41,37 +43,22 @@ services:
     networks:
       - demis-net
 
-  medical-seed:
-    build:
-      context: ./database/medical_demo/seed
-    container_name: demis-medical-seed
-    environment:
-      MEDICAL_DB_HOST: medical-db
-      MEDICAL_DB_PORT: 5432
-      MEDICAL_DB_NAME: ${MEDICAL_DB_NAME:-medical_demo}
-      MEDICAL_DB_USER: ${MEDICAL_DB_USER:-medical_user}
-      MEDICAL_DB_PASSWORD: ${MEDICAL_DB_PASSWORD:-medical_pass_change_me}
-      SEED_PATIENT_COUNT: ${SEED_PATIENT_COUNT:-200}
-      SEED_RANDOM_SEED: ${SEED_RANDOM_SEED:-42}
-    depends_on:
-      medical-db:
-        condition: service_healthy
-    networks:
-      - demis-net
-    restart: "no"
-
   backend:
     build:
       context: ./backend
     container_name: demis-backend
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     environment:
-      MEDICAL_DB_HOST: medical-db
-      MEDICAL_DB_PORT: 5432
+      # Published host ports via host-gateway for broad Docker compatibility
+      # (Docker Desktop, Linux Compose, nested/DinD environments).
+      MEDICAL_DB_HOST: host.docker.internal
+      MEDICAL_DB_PORT: ${MEDICAL_DB_EXTERNAL_PORT:-5433}
       MEDICAL_DB_NAME: ${MEDICAL_DB_NAME:-medical_demo}
       MEDICAL_DB_USER: ${MEDICAL_DB_USER:-medical_user}
       MEDICAL_DB_PASSWORD: ${MEDICAL_DB_PASSWORD:-medical_pass_change_me}
-      CATALOG_DB_HOST: catalog-db
-      CATALOG_DB_PORT: 5432
+      CATALOG_DB_HOST: host.docker.internal
+      CATALOG_DB_PORT: ${CATALOG_DB_EXTERNAL_PORT:-5434}
       CATALOG_DB_NAME: ${CATALOG_DB_NAME:-schema_catalog}
       CATALOG_DB_USER: ${CATALOG_DB_USER:-catalog_user}
       CATALOG_DB_PASSWORD: ${CATALOG_DB_PASSWORD:-catalog_pass_change_me}
@@ -83,14 +70,12 @@ services:
         condition: service_healthy
       catalog-db:
         condition: service_healthy
-      medical-seed:
-        condition: service_completed_successfully
     healthcheck:
       test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health').read()\""]
       interval: 10s
       timeout: 5s
       retries: 20
-      start_period: 15s
+      start_period: 20s
     networks:
       - demis-net
 
@@ -98,8 +83,10 @@ services:
     build:
       context: ./frontend
     container_name: demis-frontend
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     environment:
-      BACKEND_URL: ${BACKEND_URL:-http://backend:8000}
+      BACKEND_URL: http://host.docker.internal:${BACKEND_EXTERNAL_PORT:-8000}
     ports:
       - "${FRONTEND_EXTERNAL_PORT:-8501}:8501"
     depends_on:
