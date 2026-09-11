@@ -22,7 +22,7 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
     app_name: str = "DEMIS Schema Semantic Search PoC"
-    current_step: str = "Step 3 - CPU-only Embedding Pipeline + pgvector"
+    current_step: str = "Step 4 - Semantic/Keyword Hybrid Search + Terminology + FK Expansion"
     log_level: str = "INFO"
 
     medical_db_host: str = "localhost"
@@ -50,10 +50,18 @@ class Settings(BaseSettings):
     embedding_num_threads: int | None = None
     hf_hub_offline: bool = False
 
+    # Step 4 search settings
+    allow_fake_semantic_search: bool = False
+    search_rrf_k: int = 60
+    search_candidate_multiplier: int = 3
+    search_candidate_min: int = 20
+    medical_terms_path: str | None = None
+
     @field_validator(
         "embedding_model_path",
         "embedding_model_revision",
         "embedding_num_threads",
+        "medical_terms_path",
         mode="before",
     )
     @classmethod
@@ -74,12 +82,25 @@ class Settings(BaseSettings):
             f"@{self.catalog_db_host}:{self.catalog_db_port}/{self.catalog_db_name}"
         )
 
-    def resolved_model_identity(self) -> str:
-        """Prefer local path when valid; otherwise Hugging Face model name."""
+    def resolved_load_path(self) -> str:
+        """Where to load model weights from (local path preferred when present)."""
         path = (self.embedding_model_path or "").strip()
         if path and Path(path).exists():
             return path
         return self.embedding_model_name
+
+    def resolved_model_identity(self) -> str:
+        """
+        Logical model identity used in model_key.
+
+        Path is intentionally excluded so the same BGE-M3 weights at different
+        local directories share one model_key with document embeddings.
+        """
+        return self.embedding_model_name
+
+    # Backward-compatible alias used by older call sites.
+    def resolved_model_load_identity(self) -> str:
+        return self.resolved_load_path()
 
     def build_model_key(self) -> str:
         identity = self.resolved_model_identity()

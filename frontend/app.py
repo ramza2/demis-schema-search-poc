@@ -1,4 +1,4 @@
-"""Streamlit UI for Step 3 status + schema analyze + embedding pipeline."""
+"""Streamlit UI for Step 4 — Schema Search (no NL→SQL)."""
 
 from __future__ import annotations
 
@@ -12,15 +12,14 @@ BACKEND_URL = os.getenv("BACKEND_URL", "http://localhost:8000").rstrip("/")
 st.set_page_config(
     page_title="DEMIS Schema Semantic Search PoC",
     page_icon="🏥",
-    layout="centered",
+    layout="wide",
 )
 
 st.title("DEMIS Schema Semantic Search PoC")
-st.subheader("현재 Step: Step 3 - CPU-only Embedding Pipeline + pgvector")
+st.subheader("현재 Step: Step 4 - Semantic/Keyword Hybrid Search + Terminology + FK Expansion")
 st.write(
-    "Raw Schema Catalog로부터 Search Document를 생성하고, "
-    "CPU-only BGE-M3(또는 Fake) Embedding을 pgvector에 저장합니다. "
-    "자연어 Semantic Search UI는 Step 4 범위입니다."
+    "자연어로 Schema(Table/Column)를 탐색합니다. "
+    "생성형 LLM 및 자연어→SQL 생성은 포함하지 않습니다."
 )
 
 st.divider()
@@ -31,118 +30,136 @@ try:
     resp.raise_for_status()
     health = resp.json()
     st.success(f"Backend 연결 성공 (`{BACKEND_URL}`)")
-    col1, col2, col3 = st.columns(3)
-    col1.metric("Backend", health.get("backend", "unknown"))
-    col2.metric("medical_demo", health.get("medical_db", "unknown"))
-    col3.metric("schema_catalog", health.get("catalog_db", "unknown"))
+    c1, c2, c3 = st.columns(3)
+    c1.metric("Backend", health.get("backend", "unknown"))
+    c2.metric("medical_demo", health.get("medical_db", "unknown"))
+    c3.metric("schema_catalog", health.get("catalog_db", "unknown"))
     st.caption(f"step={health.get('step', '')}")
 except Exception as exc:  # noqa: BLE001
     st.error(f"Backend 연결 실패: {exc}")
-    st.info("docker compose up --build 후 Backend가 healthy 상태인지 확인하세요.")
     st.stop()
 
-st.divider()
-st.markdown("### 1) Schema Analyze")
-
-if st.button("Schema Analyze 실행", type="primary"):
-    with st.spinner("medical_demo 스키마 분석 중..."):
-        try:
-            analyze_resp = requests.post(f"{BACKEND_URL}/api/v1/schema/analyze", timeout=120)
-            analyze_resp.raise_for_status()
-            result = analyze_resp.json()
-            if result.get("status") == "SUCCESS":
-                st.success(
-                    f"분석 성공 — tables={result.get('tables')}, columns={result.get('columns')}"
-                )
-            else:
-                st.error(f"분석 실패: {result.get('error_message')}")
-            st.json(result)
-        except Exception as exc:  # noqa: BLE001
-            st.error(f"Analyze 호출 실패: {exc}")
-
-st.divider()
-st.markdown("### 2) Search Document Rebuild")
-
-if st.button("Search Document Rebuild"):
-    with st.spinner("Search Document 재생성 중..."):
-        try:
-            rebuild_resp = requests.post(
-                f"{BACKEND_URL}/api/v1/embeddings/documents/rebuild", timeout=120
-            )
-            rebuild_resp.raise_for_status()
-            rebuilt = rebuild_resp.json()
-            st.success(
-                f"documents={rebuilt.get('documents')} "
-                f"(TABLE={rebuilt.get('tables')}, COLUMN={rebuilt.get('columns')}) / "
-                f"created={rebuilt.get('created')}, updated={rebuilt.get('updated')}, "
-                f"unchanged={rebuilt.get('unchanged')}"
-            )
-            st.json(rebuilt)
-        except Exception as exc:  # noqa: BLE001
-            st.error(f"Rebuild 실패: {exc}")
-
-st.divider()
-st.markdown("### 3) Embedding Run (CPU)")
-
-if st.button("Embedding Run"):
-    with st.spinner("Embedding 실행 중 (CPU)..."):
-        try:
-            run_resp = requests.post(f"{BACKEND_URL}/api/v1/embeddings/run", timeout=3600)
-            run_resp.raise_for_status()
-            run = run_resp.json()
-            st.success(
-                f"run_id={run.get('run_id')} status={run.get('status')} "
-                f"embedded={run.get('embedded')} skipped={run.get('skipped')} "
-                f"failed={run.get('failed')}"
-            )
-            st.caption(f"model_key={run.get('model_key')}")
-            st.json(run)
-        except Exception as exc:  # noqa: BLE001
-            st.error(f"Embedding Run 실패: {exc}")
-
-st.divider()
-st.markdown("### Embedding Stats")
-
+# Provider / stats
+provider = "unknown"
 try:
-    stats_resp = requests.get(f"{BACKEND_URL}/api/v1/embeddings/stats", timeout=10)
-    stats_resp.raise_for_status()
-    stats = stats_resp.json()
-    c1, c2, c3, c4 = st.columns(4)
-    c1.metric("Active Docs", stats.get("active_documents", 0))
-    c2.metric("TABLE", stats.get("table_documents", 0))
-    c3.metric("COLUMN", stats.get("column_documents", 0))
-    c4.metric("Embeddings", stats.get("embedding_count", 0))
-    st.caption(
-        f"provider={stats.get('embedding_provider')} device={stats.get('embedding_device')} "
-        f"dim={stats.get('embedding_dimension')} stale={stats.get('stale_documents')}"
+    stats = requests.get(f"{BACKEND_URL}/api/v1/embeddings/stats", timeout=10).json()
+    provider = stats.get("embedding_provider") or stats.get("provider") or "unknown"
+    st.info(
+        f"Embedding provider=`{provider}` device=`{stats.get('embedding_device', '?')}` "
+        f"dim=`{stats.get('embedding_dimension', '?')}` "
+        f"docs=`{stats.get('active_documents', '?')}` embeddings=`{stats.get('embedding_count', '?')}`"
     )
-    if stats.get("model_keys"):
-        st.write("model_keys:", stats.get("model_keys"))
-except Exception as exc:  # noqa: BLE001
-    st.warning(f"Stats 조회 실패: {exc}")
+    if str(provider).lower() == "fake":
+        st.warning(
+            "Fake Embedding — Test only. Semantic/Hybrid 검색은 "
+            "ALLOW_FAKE_SEMANTIC_SEARCH=true 일 때만 허용됩니다. Keyword 모드는 사용 가능합니다."
+        )
+except Exception:  # noqa: BLE001
+    pass
 
 st.divider()
-st.markdown("### 최근 Embedding Runs")
-try:
-    runs_resp = requests.get(f"{BACKEND_URL}/api/v1/embeddings/runs", params={"limit": 5}, timeout=10)
-    runs_resp.raise_for_status()
-    runs = runs_resp.json()
-    if not runs:
-        st.info("아직 Embedding Run 이력이 없습니다.")
-    else:
-        st.dataframe(runs, use_container_width=True)
-except Exception as exc:  # noqa: BLE001
-    st.warning(f"Run 목록 조회 실패: {exc}")
+st.markdown("### Schema Search")
 
-st.divider()
-st.markdown("### 향후 구현 예정 (Step 4+)")
-st.markdown(
-    """
-1. **Semantic Search** — Query Embedding + cosine similarity  
-2. **Keyword / Hybrid Search** — synonym + RRF  
-3. **FK Relation Expansion**  
-4. **자연어 검색 UI**
-
-이번 Step에서는 검색 Query 입력창을 제공하지 않습니다.
-"""
+query = st.text_input(
+    "자연어 Query",
+    value="최근 간수치 검사 결과",
+    placeholder="예: 최근 처방 약품 / 고혈압 진단 이력 / tb_lab_rst",
 )
+col_a, col_b, col_c = st.columns(3)
+mode = col_a.selectbox("Search Mode", ["hybrid", "semantic", "keyword"], index=0)
+object_type = col_b.selectbox("Object Type", ["ALL", "TABLE", "COLUMN"], index=0)
+top_k = col_c.slider("Top K", min_value=1, max_value=50, value=10)
+
+col_d, col_e, col_f = st.columns(3)
+expand_terms = col_d.checkbox("Medical Term Expansion", value=True)
+expand_relations = col_e.checkbox("FK Relation Expansion", value=True)
+max_hops = col_f.slider("Max Relation Hops", min_value=0, max_value=4, value=2)
+
+if st.button("Search", type="primary"):
+    if str(provider).lower() == "fake" and mode in {"semantic", "hybrid"}:
+        st.error("Fake embedding provider에서는 Semantic/Hybrid를 기본 차단합니다. Keyword 모드를 사용하세요.")
+    else:
+        with st.spinner("검색 중..."):
+            try:
+                payload = {
+                    "query": query,
+                    "mode": mode,
+                    "top_k": top_k,
+                    "object_type": object_type,
+                    "expand_terms": expand_terms,
+                    "expand_relations": expand_relations,
+                    "max_relation_hops": max_hops,
+                    "debug": True,
+                }
+                search_resp = requests.post(
+                    f"{BACKEND_URL}/api/v1/search/schema",
+                    json=payload,
+                    timeout=180,
+                )
+                if search_resp.status_code >= 400:
+                    st.error(search_resp.text)
+                else:
+                    data = search_resp.json()
+                    st.markdown("#### Query Expansion")
+                    q = data.get("query", {})
+                    st.write(
+                        {
+                            "original": q.get("original"),
+                            "normalized": q.get("normalized"),
+                            "matched_concepts": q.get("matched_concepts"),
+                            "expanded_terms": q.get("expanded_terms"),
+                        }
+                    )
+                    st.caption(
+                        f"mode={data.get('mode')} model_key={data.get('model_key')} "
+                        f"elapsed_ms={data.get('elapsed_ms'):.1f}"
+                    )
+                    if data.get("timings"):
+                        st.json(data["timings"])
+
+                    st.markdown("#### Direct Search Results")
+                    for row in data.get("direct_results") or []:
+                        title = f"#{row.get('rank')} [{row.get('object_type')}] {row.get('table_name')}"
+                        if row.get("column_name"):
+                            title += f".{row.get('column_name')}"
+                        with st.expander(title, expanded=row.get("rank") == 1):
+                            st.write(
+                                {
+                                    "document_key": row.get("document_key"),
+                                    "semantic_score": row.get("semantic_score"),
+                                    "semantic_rank": row.get("semantic_rank"),
+                                    "keyword_score": row.get("keyword_score"),
+                                    "keyword_rank": row.get("keyword_rank"),
+                                    "rrf_score": row.get("rrf_score"),
+                                    "evidence": row.get("evidence"),
+                                }
+                            )
+                            st.code(row.get("searchable_snippet") or "", language="text")
+
+                    st.markdown("#### Related Tables (FK Expansion)")
+                    related = data.get("related_tables") or []
+                    if not related:
+                        st.write("(none)")
+                    for rel in related:
+                        path = " → ".join(
+                            [rel.get("seed_table")]
+                            + [h.get("to_table") for h in rel.get("relation_path") or []]
+                        )
+                        st.write(
+                            f"- **{rel.get('table_name')}** (seed={rel.get('seed_table')}, "
+                            f"hop={rel.get('hop_distance')}) path: `{path}`"
+                        )
+            except Exception as exc:  # noqa: BLE001
+                st.error(f"Search 호출 실패: {exc}")
+
+st.divider()
+with st.expander("Pipeline 유틸 (Analyze / Rebuild / Embed)", expanded=False):
+    if st.button("Schema Analyze"):
+        r = requests.post(f"{BACKEND_URL}/api/v1/schema/analyze", timeout=120)
+        st.json(r.json() if r.ok else {"error": r.text})
+    if st.button("Search Document Rebuild"):
+        r = requests.post(f"{BACKEND_URL}/api/v1/embeddings/documents/rebuild", timeout=120)
+        st.json(r.json() if r.ok else {"error": r.text})
+    if st.button("Embedding Run"):
+        r = requests.post(f"{BACKEND_URL}/api/v1/embeddings/run", timeout=3600)
+        st.json(r.json() if r.ok else {"error": r.text})

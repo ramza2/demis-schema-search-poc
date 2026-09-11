@@ -23,8 +23,8 @@ def create_app() -> FastAPI:
     settings = get_settings()
     app = FastAPI(
         title=settings.app_name,
-        version="0.3.0",
-        description="Step 3: CPU-only Embedding Pipeline + pgvector",
+        version="0.4.0",
+        description="Step 4: Semantic/Keyword Hybrid Schema Search + Terminology + FK Expansion",
         lifespan=lifespan,
     )
     app.include_router(api_router)
@@ -39,6 +39,7 @@ def create_app() -> FastAPI:
             "analyze": "/api/v1/schema/analyze",
             "embeddings_rebuild": "/api/v1/embeddings/documents/rebuild",
             "embeddings_run": "/api/v1/embeddings/run",
+            "schema_search": "/api/v1/search/schema",
         }
 
     return app
