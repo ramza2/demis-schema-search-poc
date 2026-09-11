@@ -7,7 +7,7 @@ import uuid
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import select
+from sqlalchemy import select, text
 
 from app.analyzers.base import (
     InspectedColumn,
@@ -86,39 +86,44 @@ def _snapshot(*, patient_comment: str, order_comment: str) -> SchemaSnapshot:
     )
 
 
-def _delete_source(session, source_id: int) -> None:
+def _delete_source(source_id: int) -> None:
     """Best-effort cleanup of a fixture CatalogSource and dependents."""
-    from sqlalchemy import text
-
-    session.execute(
-        text("UPDATE catalog_table SET last_run_id = NULL WHERE source_id = :sid"),
-        {"sid": source_id},
-    )
-    session.execute(
-        text("UPDATE catalog_relation SET last_run_id = NULL WHERE source_id = :sid"),
-        {"sid": source_id},
-    )
-    session.execute(
-        text("DELETE FROM catalog_search_document WHERE source_id = :sid"),
-        {"sid": source_id},
-    )
-    session.execute(
-        text("DELETE FROM catalog_relation WHERE source_id = :sid"),
-        {"sid": source_id},
-    )
-    session.execute(
-        text("DELETE FROM catalog_table WHERE source_id = :sid"),
-        {"sid": source_id},
-    )
-    session.execute(
-        text("DELETE FROM catalog_analysis_run WHERE source_id = :sid"),
-        {"sid": source_id},
-    )
-    session.execute(
-        text("DELETE FROM catalog_source WHERE id = :sid"),
-        {"sid": source_id},
-    )
-    session.commit()
+    session = get_catalog_session_factory()()
+    try:
+        session.execute(
+            text("UPDATE catalog_table SET last_run_id = NULL WHERE source_id = :sid"),
+            {"sid": source_id},
+        )
+        session.execute(
+            text("UPDATE catalog_relation SET last_run_id = NULL WHERE source_id = :sid"),
+            {"sid": source_id},
+        )
+        session.execute(
+            text("DELETE FROM catalog_search_document WHERE source_id = :sid"),
+            {"sid": source_id},
+        )
+        session.execute(
+            text("DELETE FROM catalog_relation WHERE source_id = :sid"),
+            {"sid": source_id},
+        )
+        session.execute(
+            text("DELETE FROM catalog_table WHERE source_id = :sid"),
+            {"sid": source_id},
+        )
+        session.execute(
+            text("DELETE FROM catalog_analysis_run WHERE source_id = :sid"),
+            {"sid": source_id},
+        )
+        session.execute(
+            text("DELETE FROM catalog_source WHERE id = :sid"),
+            {"sid": source_id},
+        )
+        session.commit()
+    except Exception:  # noqa: BLE001
+        session.rollback()
+        raise
+    finally:
+        session.close()
 
 
 @pytest.fixture()
@@ -142,79 +147,108 @@ def test_multi_source_table_and_search_isolation(client) -> None:
     suffix = uuid.uuid4().hex[:8]
     name_a = f"iso_source_a_{suffix}"
     name_b = f"iso_source_b_{suffix}"
-    session = get_catalog_session_factory()()
     source_ids: list[int] = []
 
     try:
-        source_a = CatalogSource(
-            source_name=name_a,
-            db_type="postgresql",
-            host="localhost",
-            port=5432,
-            database_name="iso_a",
-            default_schema="public",
-            username="u_a",
-            enabled=True,
-        )
-        source_b = CatalogSource(
-            source_name=name_b,
-            db_type="postgresql",
-            host="localhost",
-            port=5432,
-            database_name="iso_b",
-            default_schema="public",
-            username="u_b",
-            enabled=True,
-        )
-        session.add_all([source_a, source_b])
-        session.commit()
-        session.refresh(source_a)
-        session.refresh(source_b)
-        source_ids = [int(source_a.id), int(source_b.id)]
-
-        writer = CatalogWriter(session)
-        writer.upsert_snapshot(
-            source_id=source_a.id,
-            run_id=None,
-            snapshot=_snapshot(
-                patient_comment="SOURCE_A_PATIENT_MARKER",
-                order_comment="SOURCE_A_ORDER_MARKER",
-            ),
-        )
-        writer.upsert_snapshot(
-            source_id=source_b.id,
-            run_id=None,
-            snapshot=_snapshot(
-                patient_comment="SOURCE_B_PATIENT_MARKER",
-                order_comment="SOURCE_B_ORDER_MARKER",
-            ),
-        )
-        session.commit()
-
-        # Catalog queries filtered by source_id must not mix comments.
-        tables_a = session.scalars(
-            select(CatalogTable).where(
-                CatalogTable.source_id == source_a.id,
-                CatalogTable.table_name == "tb_shared_patient",
-                CatalogTable.active.is_(True),
+        # --- setup (close session before TestClient HTTP calls) ---
+        session = get_catalog_session_factory()()
+        try:
+            source_a = CatalogSource(
+                source_name=name_a,
+                db_type="postgresql",
+                host="localhost",
+                port=5432,
+                database_name="iso_a",
+                default_schema="public",
+                username="u_a",
+                enabled=True,
             )
-        ).all()
-        tables_b = session.scalars(
-            select(CatalogTable).where(
-                CatalogTable.source_id == source_b.id,
-                CatalogTable.table_name == "tb_shared_patient",
-                CatalogTable.active.is_(True),
+            source_b = CatalogSource(
+                source_name=name_b,
+                db_type="postgresql",
+                host="localhost",
+                port=5432,
+                database_name="iso_b",
+                default_schema="public",
+                username="u_b",
+                enabled=True,
             )
-        ).all()
-        assert len(tables_a) == 1
-        assert len(tables_b) == 1
-        assert tables_a[0].table_comment == "SOURCE_A_PATIENT_MARKER"
-        assert tables_b[0].table_comment == "SOURCE_B_PATIENT_MARKER"
-        assert tables_a[0].id != tables_b[0].id
+            session.add_all([source_a, source_b])
+            session.commit()
+            session.refresh(source_a)
+            session.refresh(source_b)
+            source_ids = [int(source_a.id), int(source_b.id)]
 
-        # Schema tables API respects source_id.
-        resp_a = client.get(f"/api/v1/schema/tables?source_id={source_a.id}")
-        resp_b = client.get(f"/api/v1/schema/tables?source_id={source_b.id}")
+            writer = CatalogWriter(session)
+            writer.upsert_snapshot(
+                source_id=source_a.id,
+                run_id=None,
+                snapshot=_snapshot(
+                    patient_comment="SOURCE_A_PATIENT_MARKER",
+                    order_comment="SOURCE_A_ORDER_MARKER",
+                ),
+            )
+            writer.upsert_snapshot(
+                source_id=source_b.id,
+                run_id=None,
+                snapshot=_snapshot(
+                    patient_comment="SOURCE_B_PATIENT_MARKER",
+                    order_comment="SOURCE_B_ORDER_MARKER",
+                ),
+            )
+            session.commit()
+
+            tables_a = session.scalars(
+                select(CatalogTable).where(
+                    CatalogTable.source_id == source_a.id,
+                    CatalogTable.table_name == "tb_shared_patient",
+                    CatalogTable.active.is_(True),
+                )
+            ).all()
+            tables_b = session.scalars(
+                select(CatalogTable).where(
+                    CatalogTable.source_id == source_b.id,
+                    CatalogTable.table_name == "tb_shared_patient",
+                    CatalogTable.active.is_(True),
+                )
+            ).all()
+            assert len(tables_a) == 1
+            assert len(tables_b) == 1
+            assert tables_a[0].table_comment == "SOURCE_A_PATIENT_MARKER"
+            assert tables_b[0].table_comment == "SOURCE_B_PATIENT_MARKER"
+            assert tables_a[0].id != tables_b[0].id
+            table_a_id = int(tables_a[0].id)
+            table_b_id = int(tables_b[0].id)
+            source_a_id = int(source_a.id)
+            source_b_id = int(source_b.id)
+
+            for sid, marker, table_id in (
+                (source_a_id, "ALPHA_ONLY_TOKEN_XYZ", table_a_id),
+                (source_b_id, "BETA_ONLY_TOKEN_XYZ", table_b_id),
+            ):
+                key = table_document_key(sid, "public", "tb_shared_patient")
+                text_value = f"tb_shared_patient {marker}"
+                session.add(
+                    CatalogSearchDocument(
+                        source_id=sid,
+                        object_type="TABLE",
+                        table_id=table_id,
+                        column_id=None,
+                        document_key=key,
+                        searchable_text=text_value,
+                        source_fingerprint=fingerprint({"t": marker}),
+                        document_fingerprint=fingerprint({"k": key, "t": text_value}),
+                        builder_version="test",
+                        active=True,
+                    )
+                )
+            session.commit()
+        finally:
+            session.close()
+
+        # --- HTTP API (no open ORM session held) ---
+        resp_a = client.get(f"/api/v1/schema/tables?source_id={source_a_id}")
+        resp_b = client.get(f"/api/v1/schema/tables?source_id={source_b_id}")
         assert resp_a.status_code == 200, resp_a.text
         assert resp_b.status_code == 200, resp_b.text
         comments_a = {
@@ -232,100 +266,79 @@ def test_multi_source_table_and_search_isolation(client) -> None:
         assert "SOURCE_B_PATIENT_MARKER" not in comments_a.values()
         assert "SOURCE_A_PATIENT_MARKER" not in comments_b.values()
 
-        # Manual search documents with distinctive text per source.
-        for source, marker, table in (
-            (source_a, "ALPHA_ONLY_TOKEN_XYZ", tables_a[0]),
-            (source_b, "BETA_ONLY_TOKEN_XYZ", tables_b[0]),
-        ):
-            key = table_document_key(int(source.id), "public", "tb_shared_patient")
-            text_value = f"tb_shared_patient {marker}"
-            session.add(
-                CatalogSearchDocument(
-                    source_id=source.id,
-                    object_type="TABLE",
-                    table_id=table.id,
-                    column_id=None,
-                    document_key=key,
-                    searchable_text=text_value,
-                    source_fingerprint=fingerprint({"t": marker}),
-                    document_fingerprint=fingerprint({"k": key, "t": text_value}),
-                    builder_version="test",
-                    active=True,
-                )
+        # --- keyword + relation isolation ---
+        session = get_catalog_session_factory()()
+        try:
+            hits_a, _ = keyword_search(
+                session,
+                original_query="ALPHA_ONLY_TOKEN_XYZ",
+                expanded_query="ALPHA_ONLY_TOKEN_XYZ",
+                original_terms=["ALPHA_ONLY_TOKEN_XYZ"],
+                expanded_terms=[],
+                limit=20,
+                source_id=source_a_id,
             )
-        session.commit()
-
-        hits_a, _ = keyword_search(
-            session,
-            original_query="ALPHA_ONLY_TOKEN_XYZ",
-            expanded_query="ALPHA_ONLY_TOKEN_XYZ",
-            original_terms=["ALPHA_ONLY_TOKEN_XYZ"],
-            expanded_terms=[],
-            limit=20,
-            source_id=int(source_a.id),
-        )
-        hits_b, _ = keyword_search(
-            session,
-            original_query="BETA_ONLY_TOKEN_XYZ",
-            expanded_query="BETA_ONLY_TOKEN_XYZ",
-            original_terms=["BETA_ONLY_TOKEN_XYZ"],
-            expanded_terms=[],
-            limit=20,
-            source_id=int(source_a.id),
-        )
-        assert any("ALPHA_ONLY_TOKEN_XYZ" in h.searchable_text for h in hits_a)
-        assert not any("BETA_ONLY_TOKEN_XYZ" in h.searchable_text for h in hits_a)
-        assert hits_b == [] or not any("BETA_ONLY_TOKEN_XYZ" in h.searchable_text for h in hits_b)
-
-        hits_b_ok, _ = keyword_search(
-            session,
-            original_query="BETA_ONLY_TOKEN_XYZ",
-            expanded_query="BETA_ONLY_TOKEN_XYZ",
-            original_terms=["BETA_ONLY_TOKEN_XYZ"],
-            expanded_terms=[],
-            limit=20,
-            source_id=int(source_b.id),
-        )
-        assert any("BETA_ONLY_TOKEN_XYZ" in h.searchable_text for h in hits_b_ok)
-        assert not any("ALPHA_ONLY_TOKEN_XYZ" in h.searchable_text for h in hits_b_ok)
-
-        # Relation expansion must stay within source_id.
-        related_a = expand_relations(
-            session,
-            seed_table_names=["tb_shared_order"],
-            max_hops=1,
-            source_id=int(source_a.id),
-        )
-        related_b = expand_relations(
-            session,
-            seed_table_names=["tb_shared_order"],
-            max_hops=1,
-            source_id=int(source_b.id),
-        )
-        assert any(r.table_name == "tb_shared_patient" for r in related_a)
-        assert any(r.table_name == "tb_shared_patient" for r in related_b)
-
-        # Cross-check: tables returned for A are only source A ids.
-        patient_ids_a = {
-            t.id
-            for t in session.scalars(
-                select(CatalogTable).where(CatalogTable.source_id == source_a.id)
-            ).all()
-        }
-        for hit in related_a:
-            table = session.scalar(
-                select(CatalogTable).where(
-                    CatalogTable.schema_name == hit.schema_name,
-                    CatalogTable.table_name == hit.table_name,
-                    CatalogTable.source_id == source_a.id,
-                )
+            hits_cross, _ = keyword_search(
+                session,
+                original_query="BETA_ONLY_TOKEN_XYZ",
+                expanded_query="BETA_ONLY_TOKEN_XYZ",
+                original_terms=["BETA_ONLY_TOKEN_XYZ"],
+                expanded_terms=[],
+                limit=20,
+                source_id=source_a_id,
             )
-            assert table is not None
-            assert table.id in patient_ids_a
+            assert any("ALPHA_ONLY_TOKEN_XYZ" in h.searchable_text for h in hits_a)
+            assert not any("BETA_ONLY_TOKEN_XYZ" in h.searchable_text for h in hits_a)
+            assert hits_cross == []
+
+            hits_b_ok, _ = keyword_search(
+                session,
+                original_query="BETA_ONLY_TOKEN_XYZ",
+                expanded_query="BETA_ONLY_TOKEN_XYZ",
+                original_terms=["BETA_ONLY_TOKEN_XYZ"],
+                expanded_terms=[],
+                limit=20,
+                source_id=source_b_id,
+            )
+            assert any("BETA_ONLY_TOKEN_XYZ" in h.searchable_text for h in hits_b_ok)
+            assert not any("ALPHA_ONLY_TOKEN_XYZ" in h.searchable_text for h in hits_b_ok)
+
+            related_a = expand_relations(
+                session,
+                seed_table_names=["tb_shared_order"],
+                max_hops=1,
+                source_id=source_a_id,
+            )
+            related_b = expand_relations(
+                session,
+                seed_table_names=["tb_shared_order"],
+                max_hops=1,
+                source_id=source_b_id,
+            )
+            assert any(r.table_name == "tb_shared_patient" for r in related_a)
+            assert any(r.table_name == "tb_shared_patient" for r in related_b)
+
+            patient_ids_a = {
+                t.id
+                for t in session.scalars(
+                    select(CatalogTable).where(CatalogTable.source_id == source_a_id)
+                ).all()
+            }
+            for hit in related_a:
+                table = session.scalar(
+                    select(CatalogTable).where(
+                        CatalogTable.schema_name == hit.schema_name,
+                        CatalogTable.table_name == hit.table_name,
+                        CatalogTable.source_id == source_a_id,
+                    )
+                )
+                assert table is not None
+                assert table.id in patient_ids_a
+        finally:
+            session.close()
     finally:
         for sid in source_ids:
             try:
-                _delete_source(session, sid)
+                _delete_source(sid)
             except Exception:  # noqa: BLE001
-                session.rollback()
-        session.close()
+                pass
