@@ -8,9 +8,11 @@ from app.api.embeddings import router as embeddings_router
 from app.api.health import router as health_router
 from app.api.schema import router as schema_router
 from app.api.search import router as search_router
+from app.api.targets import router as targets_router
 
 api_router = APIRouter()
 api_router.include_router(health_router)
 api_router.include_router(schema_router)
+api_router.include_router(targets_router)
 api_router.include_router(embeddings_router)
 api_router.include_router(search_router)

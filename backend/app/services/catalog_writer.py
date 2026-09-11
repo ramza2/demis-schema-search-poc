@@ -257,8 +257,18 @@ class CatalogWriter:
     def __init__(self, session: Session) -> None:
         self.session = session
 
-    def upsert_snapshot(self, *, source_id: int, run_id: int, snapshot: SchemaSnapshot) -> None:
+    def upsert_snapshot(
+        self,
+        *,
+        source_id: int,
+        run_id: int,
+        snapshot: SchemaSnapshot,
+        analyzed_schemas: set[str] | None = None,
+    ) -> None:
         now = _utcnow()
+        schemas = analyzed_schemas or {t.schema_name for t in snapshot.tables} or {
+            snapshot.schema_name
+        }
         pk_cols: set[tuple[str, str, str]] = {
             (pk.schema_name, pk.table_name, pk.column_name) for pk in snapshot.primary_keys
         }
@@ -562,7 +572,11 @@ class CatalogWriter:
             seen_index_ids.add(existing.id)
 
         tables = self.session.scalars(
-            select(CatalogTable).where(CatalogTable.source_id == source_id, CatalogTable.active.is_(True))
+            select(CatalogTable).where(
+                CatalogTable.source_id == source_id,
+                CatalogTable.active.is_(True),
+                CatalogTable.schema_name.in_(schemas),
+            )
         ).all()
         for table in tables:
             if table.id not in seen_table_ids:
@@ -587,8 +601,12 @@ class CatalogWriter:
             )
         ).all()
         for rel in relations:
-            if rel.id not in seen_relation_ids:
-                rel.active = False
-                rel.last_run_id = run_id
+            if rel.id in seen_relation_ids:
+                continue
+            src_table = self.session.get(CatalogTable, rel.source_table_id)
+            if src_table is None or src_table.schema_name not in schemas:
+                continue
+            rel.active = False
+            rel.last_run_id = run_id
 
         self.session.flush()

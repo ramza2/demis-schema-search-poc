@@ -26,26 +26,30 @@ SET meta_value = EXCLUDED.meta_value,
 -- catalog_source
 -- ------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS catalog_source (
-    id              BIGSERIAL PRIMARY KEY,
-    source_name     VARCHAR(100) NOT NULL,
-    db_type         VARCHAR(40)  NOT NULL,
-    host            VARCHAR(255),
-    port            INTEGER,
-    database_name   VARCHAR(100) NOT NULL,
-    default_schema  VARCHAR(100) NOT NULL DEFAULT 'public',
-    enabled         BOOLEAN      NOT NULL DEFAULT TRUE,
-    created_at      TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
-    updated_at      TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+    id                  BIGSERIAL PRIMARY KEY,
+    source_name         VARCHAR(100) NOT NULL,
+    db_type             VARCHAR(40)  NOT NULL,
+    host                VARCHAR(255),
+    port                INTEGER,
+    database_name       VARCHAR(100) NOT NULL,
+    default_schema      VARCHAR(100) NOT NULL DEFAULT 'public',
+    username            VARCHAR(255),
+    connection_options  JSONB,
+    enabled             BOOLEAN      NOT NULL DEFAULT TRUE,
+    created_at          TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+    updated_at          TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
     CONSTRAINT uq_catalog_source_name UNIQUE (source_name)
 );
 
-COMMENT ON TABLE catalog_source IS '분석 대상 DB Source 등록 정보. Password는 저장하지 않는다.';
+COMMENT ON TABLE catalog_source IS '분석 대상 DB Target Profile. Password는 저장하지 않는다.';
 COMMENT ON COLUMN catalog_source.source_name IS 'Source 논리명';
-COMMENT ON COLUMN catalog_source.db_type IS 'DBMS 종류(postgresql 등)';
+COMMENT ON COLUMN catalog_source.db_type IS 'DBMS 종류(postgresql/mysql/mariadb/oracle)';
 COMMENT ON COLUMN catalog_source.host IS 'Host (비민감 메타)';
 COMMENT ON COLUMN catalog_source.port IS 'Port';
-COMMENT ON COLUMN catalog_source.database_name IS 'Database 이름';
-COMMENT ON COLUMN catalog_source.default_schema IS '기본 분석 Schema';
+COMMENT ON COLUMN catalog_source.database_name IS 'Database 이름 (Oracle은 service/sid display용)';
+COMMENT ON COLUMN catalog_source.default_schema IS '기본 분석 Schema / Owner';
+COMMENT ON COLUMN catalog_source.username IS '접속 Username (Password 제외)';
+COMMENT ON COLUMN catalog_source.connection_options IS '비민감 Connection Option JSON (service_name, sslmode 등)';
 
 -- ------------------------------------------------------------
 -- catalog_analysis_run
@@ -219,9 +223,9 @@ COMMENT ON TABLE catalog_index_column IS 'Index Column 순서';
 
 -- Default medical_demo source (no password stored)
 INSERT INTO catalog_source (
-    source_name, db_type, host, port, database_name, default_schema, enabled
+    source_name, db_type, host, port, database_name, default_schema, username, enabled
 ) VALUES (
-    'medical_demo', 'postgresql', 'medical-db', 5432, 'medical_demo', 'public', TRUE
+    'medical_demo', 'postgresql', 'medical-db', 5432, 'medical_demo', 'public', 'medical_user', TRUE
 )
 ON CONFLICT (source_name) DO UPDATE
 SET db_type = EXCLUDED.db_type,
@@ -229,5 +233,6 @@ SET db_type = EXCLUDED.db_type,
     port = EXCLUDED.port,
     database_name = EXCLUDED.database_name,
     default_schema = EXCLUDED.default_schema,
+    username = EXCLUDED.username,
     enabled = EXCLUDED.enabled,
     updated_at = NOW();
