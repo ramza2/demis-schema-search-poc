@@ -1,0 +1,121 @@
+{
+  "concepts": [
+    {
+      "id": "liver_function",
+      "label": "간기능",
+      "aliases": [
+        "간수치",
+        "간기능",
+        "간기능검사",
+        "liver function",
+        "LFT",
+        "AST",
+        "ALT",
+        "GOT",
+        "GPT",
+        "GGT",
+        "γ-GTP",
+        "γGTP",
+        "ALP",
+        "bilirubin",
+        "빌리루빈",
+        "임상검사",
+        "검사결과",
+        "간 수치",
+        "간 기능"
+      ]
+    },
+    {
+      "id": "blood_glucose",
+      "label": "혈당",
+      "aliases": [
+        "혈당",
+        "glucose",
+        "FBS",
+        "fasting blood sugar",
+        "HbA1c",
+        "당화혈색소",
+        "임상검사",
+        "검사결과",
+        "혈당 검사"
+      ]
+    },
+    {
+      "id": "renal_function",
+      "label": "신장기능",
+      "aliases": [
+        "신장기능",
+        "콩팥기능",
+        "renal function",
+        "kidney function",
+        "creatinine",
+        "eGFR",
+        "BUN",
+        "임상검사",
+        "검사결과",
+        "신장 기능",
+        "콩팥 기능"
+      ]
+    },
+    {
+      "id": "hypertension",
+      "label": "고혈압",
+      "aliases": [
+        "고혈압",
+        "hypertension",
+        "진단",
+        "진단이력"
+      ]
+    },
+    {
+      "id": "radiology_report",
+      "label": "영상판독",
+      "aliases": [
+        "영상판독",
+        "판독결과",
+        "radiology report",
+        "imaging report",
+        "영상검사",
+        "영상 판독",
+        "판독 결과",
+        "영상 검사"
+      ]
+    },
+    {
+      "id": "discharge_summary",
+      "label": "퇴원요약",
+      "aliases": [
+        "퇴원요약",
+        "discharge summary",
+        "임상문서",
+        "진료문서",
+        "퇴원 요약"
+      ]
+    },
+    {
+      "id": "medication",
+      "label": "처방",
+      "aliases": [
+        "처방",
+        "medication",
+        "drug",
+        "medication order",
+        "약품",
+        "투약",
+        "처방 약품"
+      ]
+    },
+    {
+      "id": "admission",
+      "label": "입원",
+      "aliases": [
+        "입원",
+        "admission",
+        "inpatient",
+        "encounter",
+        "병동",
+        "입원 기록"
+      ]
+    }
+  ]
+}
