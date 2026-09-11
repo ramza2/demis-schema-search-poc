@@ -60,13 +60,30 @@ Comment를 AI/Rule로 보강하지 않으며, 대상 DB에서 읽은 원본을 �
 | `catalog_source` | 분석 대상 Source 등록(비민감 연결 메타만) |
 | `catalog_analysis_run` | 분석 실행 이력 |
 | `catalog_table` | Table 메타 + fingerprint / active |
-| `catalog_column` | Column 메타 + PK/Unique flag |
+| `catalog_column` | Column 메타 + PK 구성 여부 / 단독 unique 여부 |
+| `catalog_key_constraint` | PRIMARY KEY / UNIQUE Constraint 본체 |
+| `catalog_key_constraint_column` | Constraint 컬럼 + ordinal(복합키 순서) |
 | `catalog_relation` | FK Relationship |
 | `catalog_relation_column` | Composite FK column mapping |
 | `catalog_index` | Index 메타 |
 | `catalog_index_column` | Index column 순서 |
 
-Migration은 PoC 규모를 고려해 **init SQL + ORM `create_all` bootstrap**을 사용합니다.
+### Key / Unique / Relation 정합성
+
+- PK·UNIQUE는 `catalog_key_constraint`(+ column ordinal)에 별도 보존합니다.
+- `catalog_column.is_primary_key`: PK 구성 컬럼 여부(복합 PK 포함).
+- `catalog_column.is_unique`: **해당 컬럼이 단독으로 unique인 경우만 true**.  
+  복합 PK/UNIQUE 구성 컬럼은 false입니다.
+- FK Natural Key: `(source_table_id, constraint_name)`  
+  (서로 다른 Table에서 동일 constraint_name 사용 가능)
+- 내부 매핑 키는 `(schema_name, table_name)`을 사용합니다.
+
+### 현재 제한사항
+
+- 기본 분석 대상은 `public` 단일 Schema입니다.
+- 여러 Schema 동시 분석 / Cross-schema FK 완전 지원은 아직 구현하지 않았습니다.
+
+Migration은 PoC 규모를 고려해 **init SQL + ORM `create_all` bootstrap**(기존 volume용 FK unique 키 보정 포함)을 사용합니다.
 Alembic은 도입하지 않았습니다(향후 모델 변경이 잦아지면 재검토).
 
 ## 6. API

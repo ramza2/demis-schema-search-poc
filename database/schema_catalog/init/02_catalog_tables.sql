@@ -122,6 +122,37 @@ CREATE TABLE IF NOT EXISTS catalog_column (
 CREATE INDEX IF NOT EXISTS ix_catalog_column_table ON catalog_column (table_id, ordinal_position);
 
 COMMENT ON TABLE catalog_column IS '분석된 Column 메타데이터';
+COMMENT ON COLUMN catalog_column.is_primary_key IS 'PK 구성 컬럼 여부(복합 PK 포함)';
+COMMENT ON COLUMN catalog_column.is_unique IS '해당 컬럼 단독 UNIQUE 여부. 복합 PK/UNIQUE 구성 컬럼은 false';
+
+-- ------------------------------------------------------------
+-- catalog_key_constraint / catalog_key_constraint_column
+-- ------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS catalog_key_constraint (
+    id                  BIGSERIAL PRIMARY KEY,
+    table_id            BIGINT       NOT NULL REFERENCES catalog_table(id) ON DELETE CASCADE,
+    constraint_name     VARCHAR(200) NOT NULL,
+    constraint_type     VARCHAR(20)  NOT NULL,
+    object_fingerprint  VARCHAR(64)  NOT NULL,
+    first_seen_at       TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+    last_seen_at        TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+    last_run_id         BIGINT       REFERENCES catalog_analysis_run(id),
+    active              BOOLEAN      NOT NULL DEFAULT TRUE,
+    CONSTRAINT uq_catalog_key_constraint UNIQUE (table_id, constraint_name),
+    CONSTRAINT ck_catalog_key_constraint_type
+        CHECK (constraint_type IN ('PRIMARY_KEY', 'UNIQUE'))
+);
+
+CREATE TABLE IF NOT EXISTS catalog_key_constraint_column (
+    id                  BIGSERIAL PRIMARY KEY,
+    constraint_id       BIGINT  NOT NULL REFERENCES catalog_key_constraint(id) ON DELETE CASCADE,
+    ordinal_position    INTEGER NOT NULL,
+    column_id           BIGINT  NOT NULL REFERENCES catalog_column(id) ON DELETE CASCADE,
+    CONSTRAINT uq_catalog_key_constraint_column UNIQUE (constraint_id, ordinal_position)
+);
+
+COMMENT ON TABLE catalog_key_constraint IS 'PRIMARY KEY / UNIQUE Constraint (복합키 순서 보존)';
+COMMENT ON TABLE catalog_key_constraint_column IS 'Key Constraint Column ordinal mapping';
 
 -- ------------------------------------------------------------
 -- catalog_relation / catalog_relation_column
@@ -138,7 +169,8 @@ CREATE TABLE IF NOT EXISTS catalog_relation (
     last_seen_at        TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
     last_run_id         BIGINT       REFERENCES catalog_analysis_run(id),
     active              BOOLEAN      NOT NULL DEFAULT TRUE,
-    CONSTRAINT uq_catalog_relation UNIQUE (source_id, constraint_name)
+    -- Natural key: (source_table_id, constraint_name) — same FK name on different tables is allowed
+    CONSTRAINT uq_catalog_relation UNIQUE (source_table_id, constraint_name)
 );
 
 CREATE INDEX IF NOT EXISTS ix_catalog_relation_src ON catalog_relation (source_table_id);

@@ -233,3 +233,187 @@ def test_credentials_not_exposed(client, analyzed) -> None:
     blob = str(first) + str(client.get("/api/v1/schema/runs").json())
     assert password not in blob
     assert catalog_password not in blob
+
+
+def test_composite_pk_stored_with_ordinals(analyzed, catalog_engine) -> None:
+    with catalog_engine.connect() as conn:
+        rows = conn.execute(
+            text(
+                """
+                SELECT kc.constraint_name, kc.constraint_type,
+                       kcc.ordinal_position, c.column_name,
+                       c.is_primary_key, c.is_unique
+                FROM catalog_key_constraint kc
+                JOIN catalog_table t ON t.id = kc.table_id
+                JOIN catalog_key_constraint_column kcc ON kcc.constraint_id = kc.id
+                JOIN catalog_column c ON c.id = kcc.column_id
+                WHERE t.table_name = 'tb_code_mst'
+                  AND kc.constraint_type = 'PRIMARY_KEY'
+                  AND kc.active
+                ORDER BY kcc.ordinal_position
+                """
+            )
+        ).mappings().all()
+    assert len(rows) == 2
+    assert rows[0]["column_name"] == "cd_grp" and rows[0]["ordinal_position"] == 1
+    assert rows[1]["column_name"] == "cd_val" and rows[1]["ordinal_position"] == 2
+    # Composite PK members are PK columns but not individually unique.
+    assert rows[0]["is_primary_key"] is True and rows[0]["is_unique"] is False
+    assert rows[1]["is_primary_key"] is True and rows[1]["is_unique"] is False
+
+
+def test_single_column_unique_flag(analyzed, catalog_engine) -> None:
+    with catalog_engine.connect() as conn:
+        lab_ord_unique = conn.execute(
+            text(
+                """
+                SELECT c.is_unique, c.is_primary_key
+                FROM catalog_column c
+                JOIN catalog_table t ON t.id = c.table_id
+                WHERE t.table_name = 'tb_lab_rst' AND c.column_name = 'lab_ord_id' AND c.active
+                """
+            )
+        ).mappings().one()
+        # Composite UNIQUE on tb_ord_dtl should not mark members as alone-unique.
+        ord_dtl = conn.execute(
+            text(
+                """
+                SELECT c.column_name, c.is_unique
+                FROM catalog_column c
+                JOIN catalog_table t ON t.id = c.table_id
+                JOIN catalog_key_constraint kc ON kc.table_id = t.id
+                JOIN catalog_key_constraint_column kcc ON kcc.constraint_id = kc.id AND kcc.column_id = c.id
+                WHERE t.table_name = 'tb_ord_dtl'
+                  AND kc.constraint_type = 'UNIQUE'
+                  AND kc.active
+                ORDER BY kcc.ordinal_position
+                """
+            )
+        ).mappings().all()
+    assert lab_ord_unique["is_unique"] is True
+    assert lab_ord_unique["is_primary_key"] is False
+    assert len(ord_dtl) >= 2
+    assert all(row["is_unique"] is False for row in ord_dtl)
+
+
+def test_key_constraint_idempotency(analyzed, catalog_engine) -> None:
+    with catalog_engine.connect() as conn:
+        key_rows = conn.execute(text("SELECT COUNT(*) FROM catalog_key_constraint")).scalar_one()
+        key_col_rows = conn.execute(
+            text("SELECT COUNT(*) FROM catalog_key_constraint_column")
+        ).scalar_one()
+        active_keys = conn.execute(
+            text("SELECT COUNT(*) FROM catalog_key_constraint WHERE active")
+        ).scalar_one()
+    assert key_rows == active_keys
+    assert key_rows > 0
+    assert key_col_rows >= key_rows
+
+
+def test_relation_natural_key_allows_duplicate_constraint_names() -> None:
+    """Same FK constraint_name on different source tables must not collide."""
+    from app.analyzers.base import (
+        InspectedColumn,
+        InspectedForeignKey,
+        InspectedForeignKeyColumn,
+        InspectedTable,
+        SchemaSnapshot,
+    )
+    from app.db.catalog_bootstrap import ensure_catalog_schema
+    from app.db.session import get_catalog_session_factory
+    from app.models.catalog import CatalogRelation, CatalogSource, CatalogTable
+    from app.services.catalog_writer import CatalogWriter
+    from sqlalchemy import select
+
+    ensure_catalog_schema()
+    session = get_catalog_session_factory()()
+    try:
+        source = session.scalar(
+            select(CatalogSource).where(CatalogSource.source_name == "fk_collision_fixture")
+        )
+        if source is None:
+            source = CatalogSource(
+                source_name="fk_collision_fixture",
+                db_type="postgresql",
+                host="localhost",
+                port=5432,
+                database_name="fixture",
+                default_schema="public",
+                enabled=True,
+            )
+            session.add(source)
+            session.commit()
+            session.refresh(source)
+
+        def _col(table: str, name: str, ordinal: int = 1) -> InspectedColumn:
+            return InspectedColumn(
+                schema_name="public",
+                table_name=table,
+                ordinal_position=ordinal,
+                column_name=name,
+                data_type="bigint",
+                character_maximum_length=None,
+                numeric_precision=None,
+                numeric_scale=None,
+                is_nullable=False,
+                default_value=None,
+                column_comment=None,
+            )
+
+        snapshot = SchemaSnapshot(
+            db_type="postgresql",
+            database_name="fixture",
+            schema_name="public",
+            tables=[
+                InspectedTable("public", "t_a", "BASE TABLE", None),
+                InspectedTable("public", "t_b", "BASE TABLE", None),
+                InspectedTable("public", "t_ref", "BASE TABLE", None),
+            ],
+            columns=[
+                _col("t_a", "id"),
+                _col("t_a", "ref_id", 2),
+                _col("t_b", "id"),
+                _col("t_b", "ref_id", 2),
+                _col("t_ref", "id"),
+            ],
+            foreign_keys=[
+                InspectedForeignKey(
+                    schema_name="public",
+                    constraint_name="fk_shared_name",
+                    source_table="t_a",
+                    target_schema="public",
+                    target_table="t_ref",
+                    columns=(InspectedForeignKeyColumn(1, "ref_id", "id"),),
+                ),
+                InspectedForeignKey(
+                    schema_name="public",
+                    constraint_name="fk_shared_name",
+                    source_table="t_b",
+                    target_schema="public",
+                    target_table="t_ref",
+                    columns=(InspectedForeignKeyColumn(1, "ref_id", "id"),),
+                ),
+            ],
+        )
+        writer = CatalogWriter(session)
+        writer.upsert_snapshot(source_id=source.id, run_id=None, snapshot=snapshot)
+        # Second upsert must remain idempotent (still 2 relations, not 4).
+        writer.upsert_snapshot(source_id=source.id, run_id=None, snapshot=snapshot)
+        session.commit()
+
+        rels = session.scalars(
+            select(CatalogRelation).where(
+                CatalogRelation.source_id == source.id,
+                CatalogRelation.constraint_name == "fk_shared_name",
+                CatalogRelation.active.is_(True),
+            )
+        ).all()
+        assert len(rels) == 2
+        assert len({r.source_table_id for r in rels}) == 2
+
+        tables = session.scalars(
+            select(CatalogTable).where(CatalogTable.source_id == source.id, CatalogTable.active.is_(True))
+        ).all()
+        assert len(tables) == 3
+    finally:
+        session.close()

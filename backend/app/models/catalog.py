@@ -75,6 +75,9 @@ class CatalogTable(CatalogBase):
 
     columns: Mapped[list[CatalogColumn]] = relationship(back_populates="table", cascade="all, delete-orphan")
     indexes: Mapped[list[CatalogIndex]] = relationship(back_populates="table", cascade="all, delete-orphan")
+    key_constraints: Mapped[list[CatalogKeyConstraint]] = relationship(
+        back_populates="table", cascade="all, delete-orphan"
+    )
 
 
 class CatalogColumn(CatalogBase):
@@ -103,9 +106,51 @@ class CatalogColumn(CatalogBase):
     table: Mapped[CatalogTable] = relationship(back_populates="columns")
 
 
+class CatalogKeyConstraint(CatalogBase):
+    """PRIMARY KEY / UNIQUE constraint (composite-aware)."""
+
+    __tablename__ = "catalog_key_constraint"
+    __table_args__ = (UniqueConstraint("table_id", "constraint_name"),)
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    table_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("catalog_table.id", ondelete="CASCADE"), nullable=False
+    )
+    constraint_name: Mapped[str] = mapped_column(String(200), nullable=False)
+    constraint_type: Mapped[str] = mapped_column(String(20), nullable=False)  # PRIMARY_KEY | UNIQUE
+    object_fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
+    first_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    last_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    last_run_id: Mapped[int | None] = mapped_column(BigInteger, ForeignKey("catalog_analysis_run.id"))
+    active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+
+    table: Mapped[CatalogTable] = relationship(back_populates="key_constraints")
+    columns: Mapped[list[CatalogKeyConstraintColumn]] = relationship(
+        back_populates="key_constraint", cascade="all, delete-orphan"
+    )
+
+
+class CatalogKeyConstraintColumn(CatalogBase):
+    __tablename__ = "catalog_key_constraint_column"
+    __table_args__ = (UniqueConstraint("constraint_id", "ordinal_position"),)
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    constraint_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("catalog_key_constraint.id", ondelete="CASCADE"), nullable=False
+    )
+    ordinal_position: Mapped[int] = mapped_column(Integer, nullable=False)
+    column_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("catalog_column.id", ondelete="CASCADE"), nullable=False
+    )
+
+    key_constraint: Mapped[CatalogKeyConstraint] = relationship(back_populates="columns")
+
+
 class CatalogRelation(CatalogBase):
     __tablename__ = "catalog_relation"
-    __table_args__ = (UniqueConstraint("source_id", "constraint_name"),)
+    # Natural key scoped to source table so identical constraint names on
+    # different tables do not collide within the same catalog source.
+    __table_args__ = (UniqueConstraint("source_table_id", "constraint_name"),)
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
     source_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("catalog_source.id"), nullable=False)
