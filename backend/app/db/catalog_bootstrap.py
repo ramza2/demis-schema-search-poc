@@ -17,6 +17,7 @@ def ensure_catalog_schema(settings: Settings | None = None) -> None:
     _ensure_vector_extension(engine)
     CatalogBase.metadata.create_all(bind=engine)
     _migrate_relation_natural_key(engine)
+    _migrate_catalog_source_target_fields(engine)
     _update_step_meta(engine)
     factory = get_catalog_session_factory(cfg)
     session = factory()
@@ -36,6 +37,27 @@ def _ensure_vector_extension(engine: Engine) -> None:
         conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
 
 
+def _migrate_catalog_source_target_fields(engine: Engine) -> None:
+    """Add Target Profile columns on existing catalog volumes."""
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                """
+                ALTER TABLE IF EXISTS catalog_source
+                    ADD COLUMN IF NOT EXISTS username VARCHAR(255)
+                """
+            )
+        )
+        conn.execute(
+            text(
+                """
+                ALTER TABLE IF EXISTS catalog_source
+                    ADD COLUMN IF NOT EXISTS connection_options JSONB
+                """
+            )
+        )
+
+
 def _update_step_meta(engine: Engine) -> None:
     with engine.begin() as conn:
         conn.execute(
@@ -43,8 +65,8 @@ def _update_step_meta(engine: Engine) -> None:
                 """
                 INSERT INTO catalog_meta (meta_key, meta_value)
                 VALUES
-                    ('current_step', 'Step 3 - CPU-only Embedding Pipeline + pgvector'),
-                    ('schema_version', '0.3.0')
+                    ('current_step', 'Multi-DB Target Analyzer + Schema Explorer'),
+                    ('schema_version', '0.6.0')
                 ON CONFLICT (meta_key) DO UPDATE
                 SET meta_value = EXCLUDED.meta_value,
                     updated_at = CURRENT_TIMESTAMP
@@ -110,6 +132,8 @@ def _ensure_default_source(session: Session, cfg: Settings) -> None:
                 port=cfg.medical_db_port,
                 database_name=cfg.medical_db_name,
                 default_schema="public",
+                username=cfg.medical_db_user,
+                connection_options=None,
                 enabled=True,
             )
         )
@@ -119,4 +143,6 @@ def _ensure_default_source(session: Session, cfg: Settings) -> None:
         existing.port = cfg.medical_db_port
         existing.database_name = cfg.medical_db_name
         existing.default_schema = "public"
+        if not existing.username:
+            existing.username = cfg.medical_db_user
         existing.enabled = True

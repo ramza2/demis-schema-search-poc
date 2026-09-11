@@ -8,10 +8,11 @@ from datetime import datetime, timezone
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.analyzers.postgres import PostgreSQLSchemaInspector
+from app.analyzers.factory import create_schema_inspector
 from app.core.config import Settings, get_settings
 from app.db.catalog_bootstrap import ensure_catalog_schema
 from app.db.session import get_catalog_session_factory, get_medical_engine
+from app.db.target_connection import mask_secrets
 from app.models.catalog import CatalogAnalysisRun, CatalogSource
 from app.services.catalog_writer import CatalogWriter, schema_snapshot_fingerprint
 
@@ -22,12 +23,19 @@ def _utcnow() -> datetime:
     return datetime.now(timezone.utc)
 
 
-def _safe_error_message(exc: Exception, settings: Settings) -> str:
+def _safe_error_message(
+    exc: Exception,
+    settings: Settings,
+    *extra_secrets: str | None,
+) -> str:
     """Strip credentials from exception text before persistence/logging."""
     message = f"{type(exc).__name__}: {exc}"
-    for secret in (settings.medical_db_password, settings.catalog_db_password):
-        if secret and secret in message:
-            message = message.replace(secret, "***")
+    secrets = (
+        settings.medical_db_password,
+        settings.catalog_db_password,
+        *extra_secrets,
+    )
+    message = mask_secrets(message, *secrets)
     if "://" in message and "@" in message:
         message = "Analysis failed (details redacted to avoid credential leakage)"
     return message[:2000]
@@ -38,6 +46,7 @@ class SchemaAnalysisService:
         self.settings = settings or get_settings()
 
     def analyze_medical_demo(self, schema_name: str = "public") -> CatalogAnalysisRun:
+        """Backward-compatible medical_demo analysis using settings password."""
         ensure_catalog_schema(self.settings)
         factory = get_catalog_session_factory(self.settings)
         session: Session = factory()
@@ -62,15 +71,22 @@ class SchemaAnalysisService:
             session.commit()
             session.refresh(run)
 
-            inspector = PostgreSQLSchemaInspector(
-                engine=get_medical_engine(self.settings),
-                database_name=self.settings.medical_db_name,
+            engine = get_medical_engine(self.settings)
+            inspector = create_schema_inspector(
+                source.db_type or "postgresql",
+                engine,
+                source.database_name or self.settings.medical_db_name,
             )
             snapshot = inspector.inspect(schema_name=schema_name)
             schema_fp = schema_snapshot_fingerprint(snapshot)
 
             writer = CatalogWriter(session)
-            writer.upsert_snapshot(source_id=source.id, run_id=run.id, snapshot=snapshot)
+            writer.upsert_snapshot(
+                source_id=source.id,
+                run_id=run.id,
+                snapshot=snapshot,
+                analyzed_schemas={schema_name},
+            )
 
             run.status = "SUCCESS"
             run.finished_at = _utcnow()
@@ -93,7 +109,9 @@ class SchemaAnalysisService:
             return run
         except Exception as exc:  # noqa: BLE001
             session.rollback()
-            safe_msg = _safe_error_message(exc, self.settings)
+            safe_msg = _safe_error_message(
+                exc, self.settings, self.settings.medical_db_password
+            )
             logger.exception("Schema analysis FAILED: %s", safe_msg)
             if run is not None and run.id is not None:
                 failed = session.get(CatalogAnalysisRun, run.id)
