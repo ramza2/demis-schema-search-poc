@@ -256,8 +256,15 @@ def test_fingerprint_stability(analyzed) -> None:
     assert first["schema_fingerprint"] == second["schema_fingerprint"]
 
 
-def test_table_detail_api_for_lab_rst(client, analyzed) -> None:
-    tables = client.get("/api/v1/schema/tables", params={"name": "tb_lab_rst"}).json()
+def test_table_detail_api_for_lab_rst(client, analyzed, catalog_engine) -> None:
+    with catalog_engine.connect() as conn:
+        source_id = conn.execute(
+            text("SELECT id FROM catalog_source WHERE source_name = 'medical_demo'")
+        ).scalar_one()
+    tables = client.get(
+        "/api/v1/schema/tables",
+        params={"name": "tb_lab_rst", "source_id": source_id},
+    ).json()
     assert len(tables) == 1
     detail = client.get(f"/api/v1/schema/tables/{tables[0]['id']}").json()
     assert detail["table_name"] == "tb_lab_rst"
@@ -300,9 +307,11 @@ def test_composite_pk_stored_with_ordinals(analyzed, catalog_engine) -> None:
                        c.is_primary_key, c.is_unique
                 FROM catalog_key_constraint kc
                 JOIN catalog_table t ON t.id = kc.table_id
+                JOIN catalog_source s ON s.id = t.source_id
                 JOIN catalog_key_constraint_column kcc ON kcc.constraint_id = kc.id
                 JOIN catalog_column c ON c.id = kcc.column_id
-                WHERE t.table_name = 'tb_code_mst'
+                WHERE s.source_name = 'medical_demo'
+                  AND t.table_name = 'tb_code_mst'
                   AND kc.constraint_type = 'PRIMARY_KEY'
                   AND kc.active
                 ORDER BY kcc.ordinal_position
@@ -325,7 +334,11 @@ def test_single_column_unique_flag(analyzed, catalog_engine) -> None:
                 SELECT c.is_unique, c.is_primary_key
                 FROM catalog_column c
                 JOIN catalog_table t ON t.id = c.table_id
-                WHERE t.table_name = 'tb_lab_rst' AND c.column_name = 'lab_ord_id' AND c.active
+                JOIN catalog_source s ON s.id = t.source_id
+                WHERE s.source_name = 'medical_demo'
+                  AND t.table_name = 'tb_lab_rst'
+                  AND c.column_name = 'lab_ord_id'
+                  AND c.active
                 """
             )
         ).mappings().one()
@@ -336,9 +349,11 @@ def test_single_column_unique_flag(analyzed, catalog_engine) -> None:
                 SELECT c.column_name, c.is_unique
                 FROM catalog_column c
                 JOIN catalog_table t ON t.id = c.table_id
+                JOIN catalog_source s ON s.id = t.source_id
                 JOIN catalog_key_constraint kc ON kc.table_id = t.id
                 JOIN catalog_key_constraint_column kcc ON kcc.constraint_id = kc.id AND kcc.column_id = c.id
-                WHERE t.table_name = 'tb_ord_dtl'
+                WHERE s.source_name = 'medical_demo'
+                  AND t.table_name = 'tb_ord_dtl'
                   AND kc.constraint_type = 'UNIQUE'
                   AND kc.active
                 ORDER BY kcc.ordinal_position
