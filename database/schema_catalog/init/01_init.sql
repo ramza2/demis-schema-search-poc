@@ -22,8 +22,8 @@ COMMENT ON COLUMN catalog_meta.updated_at IS '갱신일시';
 INSERT INTO catalog_meta (meta_key, meta_value)
 VALUES
     ('poc_name', 'DEMIS Schema Semantic Search PoC'),
-    ('current_step', 'Step 1 - Foundation / Mock Medical DB'),
-    ('schema_version', '0.1.0')
+    ('current_step', 'Step 2 - Schema Analyzer / Schema Catalog'),
+    ('schema_version', '0.2.0')
 ON CONFLICT (meta_key) DO UPDATE
 SET meta_value = EXCLUDED.meta_value,
     updated_at = CURRENT_TIMESTAMP;

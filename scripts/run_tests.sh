@@ -4,7 +4,6 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT_DIR"
 
-# Defaults for host-side pytest against compose-published ports
 export MEDICAL_DB_HOST="${MEDICAL_DB_HOST:-localhost}"
 export MEDICAL_DB_PORT="${MEDICAL_DB_PORT:-5433}"
 export MEDICAL_DB_NAME="${MEDICAL_DB_NAME:-medical_demo}"

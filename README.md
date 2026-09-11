@@ -2,287 +2,178 @@
 
 관계구조가 복잡한 의료 DB Schema를 자동 분석·임베딩하여, 자연어로 관련 Table / Column / Relationship을 검색할 수 있는지 검증하는 기술 PoC입니다.
 
-## 1. 프로젝트 목적
+## 1. 현재 Step
 
-실제 DEMIS 연계 개발에 앞서 다음을 검증합니다.
+**Step 2 — Schema Analyzer + Schema Catalog**
 
-- Legacy 스타일 물리명(예: `TB_LAB_RST`, `EXM_CD`)만으로도 Comment/관계 메타데이터를 활용해 Schema를 찾을 수 있는가
-- 다단계 FK 관계(3~5+ JOIN)를 포함한 스키마에서 의미 검색이 가능한가
-- CPU-only / On-premise 환경에서 Embedding + pgvector 기반 Hybrid Search가 현실적인가
+분석 대상 의료 DB(`medical_demo`)에 연결하여 Schema Metadata를 자동 수집하고,
+`schema_catalog` DB에 구조화 저장합니다.
 
-## 2. PoC 범위
+이번 Step에서는 Embedding / pgvector / Semantic Search / LLM을 구현하지 않습니다.
 
-최종 목표 흐름:
-
-```text
-Test Medical DB
-→ Schema Analyzer
-→ Schema Catalog
-→ Embedding Pipeline
-→ PostgreSQL + pgvector
-→ Semantic / Hybrid Search API
-→ Streamlit Frontend
-```
-
-**이번 저장소의 현재 구현은 Step 1만 포함합니다.**
-
-## 3. 현재 구현 Step
-
-**Step 1 — Foundation + Mock Medical DB**
-
-포함:
-
-- Docker Compose 기반 로컬 개발환경
-- DEMIS를 모사한 `medical_demo` Mock 의료 DB (20+ tables, PK/FK, Comment, Index, Seed)
-- 향후 Catalog용 `schema_catalog` DB 부트스트랩
-- FastAPI Health Check (`medical_demo` / `schema_catalog` 연결 확인)
-- Streamlit 기본 상태 화면
-- pytest 기반 기초 검증
-
-포함하지 않음:
-
-- LLM / OpenAI API
-- 자연어 → SQL 생성
-- Embedding / Semantic Search / pgvector 검색
-- Schema Analyzer API
-
-## 4. 전체 Architecture (Step 1)
+## 2. Schema Analyzer Architecture
 
 ```text
-┌────────────┐  Compose DNS :8000  ┌────────────┐
-│  frontend  │ ──────────────────► │  backend   │
-│ (Streamlit)│                     │  (FastAPI) │
-└────────────┘                     └─────┬──────┘
-                                         │
-                    Compose DNS :5432    │
-              ┌──────────────────────────┼──────────────────────────┐
-              ▼                                                     ▼
-     ┌────────────────┐                                   ┌─────────────────┐
-     │   medical-db   │                                   │   catalog-db    │
-     │ medical_demo   │                                   │ schema_catalog  │
-     │ (+ init seed)  │                                   │ (pgvector 가능) │
-     └────────────────┘                                   └─────────────────┘
+medical-db (medical_demo)
+   │
+   │ metadata SELECT only
+   ▼
+PostgreSQLSchemaInspector
+   ↓
+SchemaAnalysisService
+   ↓
+Normalize / Fingerprint
+   ↓
+CatalogWriter (upsert)
+   ↓
+catalog-db (schema_catalog)
 ```
 
-컨테이너 간 연결은 Docker Compose **service DNS**를 사용합니다.
+- Source DB(`medical_demo`): Schema Metadata 조회만 수행 (INSERT/UPDATE/DELETE/DDL 금지)
+- Catalog DB(`schema_catalog`): 분석 결과 Read/Write
+- DBMS Adapter는 `SchemaInspector` 인터페이스로 분리되어 있으며, 현재는 PostgreSQL 구현만 제공합니다.
 
-- `backend → medical-db:5432`
-- `backend → catalog-db:5432`
-- `frontend → backend:8000`
+## 3. Source DB vs Catalog DB
 
-호스트 published port(`5433`, `5434`, `8000`, `8501`)는 로컬 접속/디버깅용입니다.
-## 5. 기술스택
+| 구분 | medical_demo | schema_catalog |
+|------|--------------|----------------|
+| 역할 | 분석 대상 Mock 의료 DB | Schema Catalog 저장소 |
+| Analyzer 권한 | SELECT(metadata) only | INSERT/UPDATE |
+| Password 저장 | 환경변수만 사용 | Catalog Table에 평문 저장 금지 |
 
-| 영역 | 기술 |
-|------|------|
-| Backend | Python 3.11, FastAPI, SQLAlchemy 2.x, psycopg |
-| Database | PostgreSQL 16, (catalog) pgvector 이미지 |
-| Frontend | Streamlit |
-| Infra | Docker, Docker Compose |
-| Test | pytest |
+## 4. 수집 Metadata
 
-제약:
+- Database / Schema / 분석 실행시간
+- Table: schema, name, type, comment
+- Column: ordinal, name, type, length/precision/scale, nullable, default, comment
+- Primary Key / Unique Constraint (composite 순서 포함)
+- Foreign Key (composite mapping 포함)
+- Index: name, unique, method, definition, columns
 
-- 생성형 LLM / 외부 LLM API 미사용
-- CPU-only 전제
-- 국방망 On-premise 실행을 고려한 로컬 Compose 구조
+Search Enrichment(`searchable_text`, synonym, embedding 등)는 생성하지 않습니다.
+Comment를 AI/Rule로 보강하지 않으며, 대상 DB에서 읽은 원본을 보존합니다.
 
-## 6. 프로젝트 디렉터리 구조
+## 5. Catalog 데이터 모델
 
-```text
-demis-schema-search-poc/
-  backend/
-    app/
-      api/
-      core/
-      db/
-      models/
-      services/
-    tests/
-    Dockerfile
-    requirements.txt
-  frontend/
-    app.py
-    Dockerfile
-    requirements.txt
-  database/
-    medical_demo/
-      Dockerfile     # Postgres + init seed
-      init/          # schema / comments / indexes
-      seed/          # deterministic seed script
-    schema_catalog/
-      init/
-  scripts/
-  docker-compose.yml
-  .env.example
-  README.md
+| Table | 역할 |
+|-------|------|
+| `catalog_source` | 분석 대상 Source 등록(비민감 연결 메타만) |
+| `catalog_analysis_run` | 분석 실행 이력 |
+| `catalog_table` | Table 메타 + fingerprint / active |
+| `catalog_column` | Column 메타 + PK/Unique flag |
+| `catalog_relation` | FK Relationship |
+| `catalog_relation_column` | Composite FK column mapping |
+| `catalog_index` | Index 메타 |
+| `catalog_index_column` | Index column 순서 |
+
+Migration은 PoC 규모를 고려해 **init SQL + ORM `create_all` bootstrap**을 사용합니다.
+Alembic은 도입하지 않았습니다(향후 모델 변경이 잦아지면 재검토).
+
+## 6. API
+
+| Method | Path | 설명 |
+|--------|------|------|
+| POST | `/api/v1/schema/analyze` | medical_demo Schema 분석 후 Catalog 적재 |
+| GET | `/api/v1/schema/runs` | 최근 분석 실행 이력 |
+| GET | `/api/v1/schema/runs/{run_id}` | 분석 실행 상세 |
+| GET | `/api/v1/schema/tables` | Catalog Table 목록 (`schema_name`, `active`, `name`) |
+| GET | `/api/v1/schema/tables/{table_id}` | Table 상세(Column/PK/FK/Index/관계) |
+| GET | `/health` | Backend / DB 연결 상태 |
+
+분석 실행 예:
+
+```bash
+curl -X POST http://localhost:8000/api/v1/schema/analyze
 ```
 
-## 7. Docker Compose 실행 방법
+응답 예:
 
-### 사전 준비
+```json
+{
+  "run_id": 1,
+  "status": "SUCCESS",
+  "source": "medical_demo",
+  "schema": "public",
+  "tables": 24,
+  "columns": 180,
+  "relations": 50,
+  "indexes": 40,
+  "schema_fingerprint": "...",
+  "started_at": "...",
+  "finished_at": "..."
+}
+```
 
-- Docker Desktop (Windows/macOS) 또는 Docker Engine + Compose (Linux)
-- CPU-only 환경에서 실행 가능
+## 7. Credential 관리 원칙
 
-### 실행
+- Password는 Catalog Table에 저장하지 않습니다.
+- Password는 API Response / 로그 / 예외 메시지에 노출하지 않습니다.
+- DB Connection URL 전체를 로그로 남기지 않습니다.
+- Source 접속정보는 환경변수(`MEDICAL_DB_*`, `CATALOG_DB_*`)를 사용합니다.
+
+## 8. Docker Compose 실행
 
 ```bash
 cp .env.example .env
 docker compose up --build
 ```
 
-또는:
+서비스:
+
+- `medical-db` :5433 (host debug)
+- `catalog-db` :5434
+- `backend` :8000
+- `frontend` :8501
+
+컨테이너 간 연결은 Compose service DNS를 사용합니다.
+
+## 9. 테스트
 
 ```bash
-cp .env.example .env
-bash scripts/start.sh
-```
-
-최초 기동 시:
-
-1. `medical-db` 스키마/Comment/Index 초기화 후 deterministic seed 적재
-2. `catalog-db` 부트스트랩
-3. `backend` / `frontend` 기동
-종료:
-
-```bash
-docker compose down
-```
-
-볼륨까지 삭제(재초기화):
-
-```bash
-docker compose down -v
-```
-
-## 8. medical_demo 설명
-
-`medical_demo`는 DEMIS를 대신하는 **Mock 의료 DB**입니다.
-
-목적:
-
-- 직관적이지 않은 Legacy 물리명
-- 다단계 관계 구조
-- 한국어 COMMENT 메타데이터
-- 실제 PK/FK/Index 메타데이터
-
-를 제공하여 이후 Schema Analyzer / Semantic Search 품질을 검증합니다.
-
-분석 대상 DB(`medical_demo`)와 시스템 관리 DB(`schema_catalog`)는 분리되어 있습니다.
-
-## 9. 주요 Table과 관계
-
-총 **24개 Table**을 구성합니다.
-
-### Master
-
-- `TB_PT_MST` 환자
-- `TB_DEPT_MST` 진료과
-- `TB_PROVIDER` 의료진
-- `TB_WARD_MST` 병동
-- `TB_CODE_MST` 공통코드
-- `TB_DGN_CD_MST` 진단코드
-- `TB_LAB_MST` 검사항목
-- `TB_LAB_REF` 검사기준치
-- `TB_DRUG_MST` 약품
-- `TB_IMG_MST` 영상검사항목
-- `TB_PROC_MST` 처치/시술
-- `TB_DOC_TYPE` 문서유형
-
-### Transaction
-
-- `TB_ENC_HIST` Encounter
-- `TB_ADM_HIST` 입원
-- `TB_DGN_HIST` 진단이력
-- `TB_PROC_HIST` 처치이력
-- `TB_ORD_HDR` / `TB_ORD_DTL` 오더
-- `TB_LAB_ORD` / `TB_LAB_RST` 검사오더/결과
-- `TB_MED_ORD` 처방
-- `TB_IMG_ORD` / `TB_IMG_RPT` 영상오더/판독
-- `TB_CLN_DOC` 임상문서
-
-### 대표 다단계 흐름
-
-1. 검사결과  
-   `TB_PT_MST → TB_ENC_HIST → TB_ORD_HDR → TB_LAB_ORD → TB_LAB_RST → TB_LAB_MST`
-2. 처방  
-   `TB_PT_MST → TB_ENC_HIST → TB_ORD_HDR → TB_MED_ORD → TB_DRUG_MST`
-3. 영상판독  
-   `TB_PT_MST → TB_ENC_HIST → TB_IMG_ORD → TB_IMG_RPT → TB_IMG_MST`
-4. 임상문서  
-   `TB_PT_MST → TB_ENC_HIST → TB_CLN_DOC → TB_DOC_TYPE`
-5. 입원  
-   `TB_PT_MST → TB_ENC_HIST → TB_ADM_HIST → TB_WARD_MST`
-
-검사 Master에는 AST/ALT/GGT/ALP/Total Bilirubin, Glucose/FBS/HbA1c, Creatinine/eGFR/BUN을 포함합니다.  
-“간수치” 같은 개념은 단일 컬럼명이 아니라 검사코드 Master를 통해 표현됩니다.
-
-## 10. Health Check 방법
-
-Backend:
-
-```bash
-curl http://localhost:8000/health
-```
-
-예상 응답 예:
-
-```json
-{
-  "status": "ok",
-  "backend": "ok",
-  "medical_db": "ok",
-  "catalog_db": "ok",
-  "step": "Step 1 - Foundation / Mock Medical DB",
-  "app_name": "DEMIS Schema Semantic Search PoC"
-}
-```
-
-Frontend: http://localhost:8501
-
-## 11. Test 실행 방법
-
-Compose로 DB가 떠 있는 상태에서:
-
-```bash
-# backend 컨테이너에서 실행
 docker compose exec backend pytest -q
-
-# 또는 호스트에서 (의존성 설치 후)
+# 또는
 bash scripts/run_tests.sh
 ```
 
 검증 항목:
 
-- Backend Health Check
-- medical_demo / schema_catalog 연결
-- 주요 Table 생성
-- PK/FK 생성
-- Seed Data 존재
-- Patient → Encounter → Lab Order → Lab Result → Lab Master JOIN
+- Step 1 기존 Health / PK/FK / Seed / Comment 테스트
+- Schema Inspector Table/Column/PK/FK/Index 수집
+- Catalog 적재 및 Idempotency
+- Fingerprint 안정성
+- Analysis Run / Table Detail API
+- Credential 비노출
 
-## 12. 향후 개발 Step
+## 10. 현재 미구현 범위
 
-| Step | 내용 |
-|------|------|
-| **Step 1** | Foundation + Mock Medical DB *(현재)* |
-| **Step 2** | Schema Analyzer + Schema Catalog |
-| **Step 3** | CPU-only Embedding Pipeline + PostgreSQL/pgvector |
-| **Step 4** | Semantic / Keyword Hybrid Search + FK Relation Expansion |
-| **Step 5** | Streamlit Schema Explorer / Natural Language Search UI |
-| **Step 6** | 정확도 평가 및 기술검증 (Top-1, Recall@3/5, Relation Accuracy, Latency, Indexing Time, Schema Change Detection) |
+- sentence-transformers / BGE-M3 / Embedding
+- pgvector / vector column / cosine similarity
+- Semantic / Keyword Hybrid Search
+- Synonym / Query Expansion
+- Relation Expansion 검색
+- LLM / 자연어 → SQL / Dynamic SQL
+- Schema Change Diff UI / 알림
+- Streamlit Schema Explorer (Step 5)
 
-## 환경변수
+## 11. 이후 Step 3 계획
 
-`.env`는 Git에 포함하지 않습니다. `.env.example`을 복사해 사용하세요.
+CPU-only Embedding Pipeline + PostgreSQL/pgvector:
 
-주요 변수:
+1. Catalog Metadata 기반 searchable text 생성(원본 Comment 보존 + 파생 필드 분리)
+2. CPU Embedding 모델 로컬 적재
+3. `schema_catalog`에 vector 컬럼/인덱스 추가
+4. Embedding batch job 및 재분석 시 갱신 전략
 
-- `MEDICAL_DB_*` — Mock 의료 DB
-- `CATALOG_DB_*` — Schema Catalog DB
-- `SEED_PATIENT_COUNT` / `SEED_RANDOM_SEED` — Seed 제어
-- `BACKEND_URL` — Frontend → Backend 주소
+## 12. 전체 PoC Roadmap
+
+| Step | 내용 | 상태 |
+|------|------|------|
+| 1 | Foundation + Mock Medical DB | 완료 |
+| 2 | Schema Analyzer + Schema Catalog | **현재** |
+| 3 | CPU-only Embedding + pgvector | 예정 |
+| 4 | Hybrid Search + FK Expansion | 예정 |
+| 5 | Streamlit Schema Explorer | 예정 |
+| 6 | 정확도 평가 / Schema Change Detection | 예정 |
 
 ## License
 
