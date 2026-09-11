@@ -86,6 +86,7 @@ services:
       - ./backend/app:/app/app
       - ./backend/tests:/app/tests
       - ./backend/scripts:/app/scripts
+      - ./backend/evaluation:/app/evaluation
     ports:
       # Host access / debugging only
       - "${BACKEND_EXTERNAL_PORT:-8000}:8000"
