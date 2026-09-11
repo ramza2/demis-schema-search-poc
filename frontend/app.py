@@ -1,14 +1,86 @@
-"""Streamlit UI for Step 4 — Schema Search (no NL→SQL)."""
+"""Streamlit UI — Multi-DB Target Analyzer + Schema Explorer."""
 
 from __future__ import annotations
 
+import csv
 import json
 import os
+from typing import Any
 
 import requests
 import streamlit as st
 
 BACKEND_URL = os.getenv("BACKEND_URL", "http://localhost:8000").rstrip("/")
+
+DEFAULT_PORTS = {
+    "postgresql": 5432,
+    "mysql": 3306,
+    "mariadb": 3306,
+    "oracle": 1521,
+}
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+
+def api_get(path: str, **kwargs: Any) -> requests.Response:
+    return requests.get(f"{BACKEND_URL}{path}", timeout=kwargs.pop("timeout", 30), **kwargs)
+
+
+def api_post(path: str, **kwargs: Any) -> requests.Response:
+    return requests.post(f"{BACKEND_URL}{path}", timeout=kwargs.pop("timeout", 120), **kwargs)
+
+
+def load_targets() -> list[dict[str, Any]]:
+    try:
+        resp = api_get("/api/v1/targets")
+        resp.raise_for_status()
+        return resp.json()
+    except Exception as exc:  # noqa: BLE001
+        st.warning(f"Target 목록 로드 실패: {exc}")
+        return []
+
+
+def target_label(t: dict[str, Any]) -> str:
+    return f"{t.get('source_name')} / {t.get('db_type')} / {t.get('host')}"
+
+
+def target_selector(
+    targets: list[dict[str, Any]],
+    *,
+    key: str,
+    required: bool = False,
+) -> dict[str, Any] | None:
+    if not targets:
+        st.info("등록된 Target이 없습니다. Targets 탭에서 추가하세요.")
+        return None
+    labels = [target_label(t) for t in targets]
+    options = labels if required else ["— 선택 —"] + labels
+    choice = st.selectbox("Target", options, key=key)
+    if choice == "— 선택 —":
+        return None
+    idx = labels.index(choice)
+    return targets[idx]
+
+
+def show_response(resp: requests.Response) -> None:
+    try:
+        body = resp.json()
+    except Exception:  # noqa: BLE001
+        body = {"raw": resp.text}
+    if resp.ok:
+        st.success(f"HTTP {resp.status_code}")
+        st.json(body)
+    else:
+        st.error(f"HTTP {resp.status_code}")
+        st.json(body if isinstance(body, dict) else {"error": body})
+
+
+# ---------------------------------------------------------------------------
+# Page setup + shared header
+# ---------------------------------------------------------------------------
 
 st.set_page_config(
     page_title="DEMIS Schema Semantic Search PoC",
@@ -17,7 +89,7 @@ st.set_page_config(
 )
 
 st.title("DEMIS Schema Semantic Search PoC")
-st.subheader("현재 Step: Step 5 - Gold Set Schema Search Evaluation")
+st.subheader("Multi-DB Target Analyzer + Schema Explorer")
 st.write(
     "자연어로 Schema(Table/Column)를 탐색합니다. "
     "생성형 LLM 및 자연어→SQL 생성은 포함하지 않습니다."
@@ -40,10 +112,9 @@ except Exception as exc:  # noqa: BLE001
     st.error(f"Backend 연결 실패: {exc}")
     st.stop()
 
-# Provider / stats
 provider = "unknown"
 try:
-    stats = requests.get(f"{BACKEND_URL}/api/v1/embeddings/stats", timeout=10).json()
+    stats = api_get("/api/v1/embeddings/stats", timeout=10).json()
     provider = stats.get("embedding_provider") or stats.get("provider") or "unknown"
     st.info(
         f"Embedding provider=`{provider}` device=`{stats.get('embedding_device', '?')}` "
@@ -58,18 +129,373 @@ try:
 except Exception:  # noqa: BLE001
     pass
 
-
 st.divider()
-tab_search, tab_eval = st.tabs(["Schema Search", "Evaluation Results"])
+
+targets = load_targets()
+tab_targets, tab_explorer, tab_search, tab_eval = st.tabs(
+    ["Targets", "Schema Explorer", "Schema Search", "Evaluation Results"]
+)
+
+
+# ---------------------------------------------------------------------------
+# Tab 1: Targets
+# ---------------------------------------------------------------------------
+
+with tab_targets:
+    st.markdown("### Target 목록")
+    if targets:
+        rows = [
+            {
+                "Name": t.get("source_name"),
+                "DBMS": t.get("db_type"),
+                "Host": t.get("host"),
+                "Port": t.get("port"),
+                "Database": t.get("database_name"),
+                "Default Schema": t.get("default_schema"),
+                "Username": t.get("username"),
+                "Enabled": t.get("enabled"),
+            }
+            for t in targets
+        ]
+        st.dataframe(rows, use_container_width=True)
+    else:
+        st.write("(등록된 Target 없음)")
+
+    st.markdown("### Target 추가")
+    # db_type / port outside form so defaults re-render when type changes.
+    db_type = st.selectbox(
+        "DB Type",
+        ["postgresql", "mysql", "mariadb", "oracle"],
+        key="add_target_db_type",
+    )
+    port = st.number_input(
+        "Port",
+        min_value=1,
+        max_value=65535,
+        value=DEFAULT_PORTS.get(db_type, 5432),
+        key=f"add_target_port_{db_type}",
+    )
+    with st.form("add_target_form", clear_on_submit=True):
+        source_name = st.text_input("Source Name", placeholder="my_target")
+        host = st.text_input("Host", value="localhost")
+        username = st.text_input("Username")
+
+        database_name = ""
+        default_schema = "public"
+        service_name = ""
+        connection_options: dict[str, Any] | None = None
+
+        if db_type == "postgresql":
+            database_name = st.text_input("Database", value="")
+            default_schema = st.text_input("Schema", value="public")
+        elif db_type in {"mysql", "mariadb"}:
+            database_name = st.text_input("Database", value="")
+            st.caption("MySQL/MariaDB: default_schema는 database 이름과 동일하게 저장됩니다.")
+        else:  # oracle
+            service_name = st.text_input("Service Name", value="")
+            default_schema = st.text_input("Schema / Owner", value="")
+
+        enabled = st.checkbox("Enabled", value=True)
+        submitted = st.form_submit_button("Add Target", type="primary")
+
+        if submitted:
+            if db_type in {"mysql", "mariadb"}:
+                default_schema = database_name
+            if db_type == "oracle":
+                database_name = service_name
+                connection_options = {"service_name": service_name} if service_name else None
+            missing = []
+            if not source_name.strip():
+                missing.append("source_name")
+            if not host.strip():
+                missing.append("host")
+            if not str(database_name).strip():
+                missing.append("database/service_name")
+            if not str(default_schema).strip():
+                missing.append("default_schema")
+            if not username.strip():
+                missing.append("username")
+            if missing:
+                st.error(f"필수 항목 누락: {', '.join(missing)}")
+            else:
+                payload = {
+                    "source_name": source_name.strip(),
+                    "db_type": db_type,
+                    "host": host.strip(),
+                    "port": int(port),
+                    "database_name": str(database_name).strip(),
+                    "default_schema": str(default_schema).strip(),
+                    "username": username.strip(),
+                    "connection_options": connection_options,
+                    "enabled": enabled,
+                }
+                try:
+                    create_resp = api_post("/api/v1/targets", json=payload, timeout=30)
+                    show_response(create_resp)
+                    if create_resp.ok:
+                        st.info("Target이 추가되었습니다. 페이지를 새로고침하면 목록에 반영됩니다.")
+                except Exception as exc:  # noqa: BLE001
+                    st.error(f"Target 생성 실패: {exc}")
+
+    st.markdown("### 선택 Target 작업")
+    selected = target_selector(targets, key="targets_action_select")
+    if selected:
+        st.caption(f"id={selected['id']} · {target_label(selected)}")
+        password = st.text_input(
+            "Password (제출 후 표시되지 않음)",
+            type="password",
+            key="target_action_password",
+        )
+
+        b1, b2 = st.columns(2)
+        with b1:
+            if st.button("Test Connection", key="btn_test_conn"):
+                if not password:
+                    st.error("Password가 필요합니다.")
+                else:
+                    try:
+                        r = api_post(
+                            f"/api/v1/targets/{selected['id']}/test",
+                            json={"password": password},
+                            timeout=60,
+                        )
+                        show_response(r)
+                    except Exception as exc:  # noqa: BLE001
+                        st.error(f"Test Connection 실패: {exc}")
+        with b2:
+            if st.button("Discover Schemas", key="btn_discover"):
+                if not password:
+                    st.error("Password가 필요합니다.")
+                else:
+                    try:
+                        r = api_post(
+                            f"/api/v1/targets/{selected['id']}/schemas",
+                            json={"password": password},
+                            timeout=60,
+                        )
+                        show_response(r)
+                        if r.ok:
+                            st.session_state[f"discovered_schemas_{selected['id']}"] = (
+                                r.json().get("schemas") or []
+                            )
+                    except Exception as exc:  # noqa: BLE001
+                        st.error(f"Discover Schemas 실패: {exc}")
+
+        discovered = st.session_state.get(f"discovered_schemas_{selected['id']}", [])
+        schema_options = discovered or (
+            [selected.get("default_schema")] if selected.get("default_schema") else []
+        )
+        chosen_schemas = st.multiselect(
+            "Schemas to Analyze",
+            options=schema_options,
+            default=schema_options[:1] if schema_options else [],
+            key=f"analyze_schemas_{selected['id']}",
+        )
+        if st.button("Analyze", type="primary", key="btn_analyze"):
+            if not password:
+                st.error("Password가 필요합니다.")
+            elif not chosen_schemas:
+                st.error("분석할 Schema를 선택하세요.")
+            else:
+                try:
+                    r = api_post(
+                        f"/api/v1/targets/{selected['id']}/analyze",
+                        json={"password": password, "schemas": chosen_schemas},
+                        timeout=600,
+                    )
+                    show_response(r)
+                except Exception as exc:  # noqa: BLE001
+                    st.error(f"Analyze 실패: {exc}")
+
+        st.markdown("#### Embedding Pipeline")
+        source_name = selected.get("source_name") or ""
+        e1, e2 = st.columns(2)
+        with e1:
+            if st.button("Rebuild Docs", key="btn_rebuild_docs"):
+                try:
+                    r = api_post(
+                        f"/api/v1/embeddings/documents/rebuild?source={source_name}",
+                        timeout=300,
+                    )
+                    show_response(r)
+                except Exception as exc:  # noqa: BLE001
+                    st.error(f"Rebuild Docs 실패: {exc}")
+        with e2:
+            if st.button("Embedding Run", key="btn_embed_run"):
+                try:
+                    r = api_post(
+                        f"/api/v1/embeddings/run?source={source_name}",
+                        timeout=3600,
+                    )
+                    show_response(r)
+                except Exception as exc:  # noqa: BLE001
+                    st.error(f"Embedding Run 실패: {exc}")
+
+    st.markdown("### medical_demo Analyze Shortcut")
+    st.caption("기본 medical_demo 소스에 대해 POST /api/v1/schema/analyze 를 호출합니다.")
+    if st.button("Analyze medical_demo", key="btn_medical_demo_analyze"):
+        try:
+            r = api_post("/api/v1/schema/analyze", timeout=120)
+            show_response(r)
+        except Exception as exc:  # noqa: BLE001
+            st.error(f"medical_demo analyze 실패: {exc}")
+
+
+# ---------------------------------------------------------------------------
+# Tab 2: Schema Explorer
+# ---------------------------------------------------------------------------
+
+with tab_explorer:
+    st.markdown("### Schema Explorer")
+    explorer_target = target_selector(targets, key="explorer_target", required=True)
+    if explorer_target:
+        tid = explorer_target["id"]
+        try:
+            summary_resp = api_get(f"/api/v1/targets/{tid}/catalog-summary")
+            if summary_resp.ok:
+                summary = summary_resp.json()
+                st.markdown("#### Catalog Summary")
+                s1, s2, s3, s4 = st.columns(4)
+                s1.metric("Tables", summary.get("tables", 0))
+                s2.metric("Columns", summary.get("columns", 0))
+                s3.metric("Relations", summary.get("relations", 0))
+                s4.metric("Indexes", summary.get("indexes", 0))
+                st.caption(
+                    f"source={summary.get('source_name')} · "
+                    f"last_success_run={summary.get('last_success_run_id')} · "
+                    f"fingerprint={summary.get('last_success_fingerprint')} · "
+                    f"at={summary.get('last_success_at')}"
+                )
+            else:
+                st.warning(f"Catalog summary 로드 실패: {summary_resp.text}")
+        except Exception as exc:  # noqa: BLE001
+            st.warning(f"Catalog summary 오류: {exc}")
+
+        try:
+            tables_resp = api_get(
+                "/api/v1/schema/tables",
+                params={"source_id": tid, "active": "true"},
+            )
+            tables_resp.raise_for_status()
+            tables = tables_resp.json()
+        except Exception as exc:  # noqa: BLE001
+            st.error(f"Table 목록 로드 실패: {exc}")
+            tables = []
+
+        st.markdown("#### Tables")
+        f1, f2, f3 = st.columns(3)
+        schema_filter = f1.text_input("Schema filter", key="explorer_schema_f")
+        name_filter = f2.text_input("Table name filter", key="explorer_name_f")
+        comment_filter = f3.text_input("Comment search", key="explorer_comment_f")
+
+        filtered = tables
+        if schema_filter.strip():
+            q = schema_filter.strip().lower()
+            filtered = [t for t in filtered if q in (t.get("schema_name") or "").lower()]
+        if name_filter.strip():
+            q = name_filter.strip().lower()
+            filtered = [t for t in filtered if q in (t.get("table_name") or "").lower()]
+        if comment_filter.strip():
+            q = comment_filter.strip().lower()
+            filtered = [t for t in filtered if q in (t.get("table_comment") or "").lower()]
+
+        table_rows = [
+            {
+                "Schema": t.get("schema_name"),
+                "Table": t.get("table_name"),
+                "Comment": t.get("table_comment") or "",
+                "Column Count": t.get("column_count", 0),
+                "id": t.get("id"),
+            }
+            for t in filtered
+        ]
+        st.dataframe(
+            [{k: v for k, v in r.items() if k != "id"} for r in table_rows],
+            use_container_width=True,
+        )
+        st.caption(f"{len(filtered)} / {len(tables)} tables")
+
+        if filtered:
+            labels = [
+                f"{t.get('schema_name')}.{t.get('table_name')} (id={t.get('id')})"
+                for t in filtered
+            ]
+            choice = st.selectbox("Table 선택", labels, key="explorer_table_select")
+            chosen = filtered[labels.index(choice)]
+            try:
+                detail_resp = api_get(f"/api/v1/schema/tables/{chosen['id']}")
+                detail_resp.raise_for_status()
+                detail = detail_resp.json()
+            except Exception as exc:  # noqa: BLE001
+                st.error(f"Table detail 로드 실패: {exc}")
+                detail = None
+
+            if detail:
+                st.markdown(
+                    f"#### `{detail.get('schema_name')}.{detail.get('table_name')}`"
+                )
+                if detail.get("table_comment"):
+                    st.write(detail["table_comment"])
+
+                st.markdown("##### Columns")
+                col_rows = [
+                    {
+                        "Name": c.get("column_name"),
+                        "Type": c.get("data_type"),
+                        "Nullable": c.get("nullable"),
+                        "PK": c.get("primary_key"),
+                        "Unique": c.get("unique"),
+                        "Default": c.get("default_value"),
+                        "Comment": c.get("comment") or "",
+                    }
+                    for c in detail.get("columns") or []
+                ]
+                st.dataframe(col_rows, use_container_width=True)
+
+                st.markdown("##### Outbound FK")
+                outbound = detail.get("outbound_relations") or []
+                if outbound:
+                    st.json(outbound)
+                else:
+                    st.write("(none)")
+
+                st.markdown("##### Inbound FK")
+                inbound = detail.get("inbound_relations") or []
+                if inbound:
+                    st.json(inbound)
+                else:
+                    st.write("(none)")
+
+                st.markdown("##### Indexes")
+                indexes = detail.get("indexes") or []
+                if indexes:
+                    ix_rows = [
+                        {
+                            "Name": ix.get("index_name"),
+                            "Unique": ix.get("is_unique"),
+                            "Method": ix.get("index_method"),
+                            "Columns": ", ".join(ix.get("columns") or []),
+                        }
+                        for ix in indexes
+                    ]
+                    st.dataframe(ix_rows, use_container_width=True)
+                else:
+                    st.write("(none)")
+
+
+# ---------------------------------------------------------------------------
+# Tab 3: Schema Search
+# ---------------------------------------------------------------------------
 
 with tab_search:
-
     st.markdown("### Schema Search")
+    search_target = target_selector(targets, key="search_target", required=True)
 
     query = st.text_input(
         "자연어 Query",
         value="최근 간수치 검사 결과",
         placeholder="예: 최근 처방 약품 / 고혈압 진단 이력 / tb_lab_rst",
+        key="search_query",
     )
     col_a, col_b, col_c = st.columns(3)
     mode = col_a.selectbox("Search Mode", ["hybrid", "semantic", "keyword"], index=0)
@@ -81,9 +507,14 @@ with tab_search:
     expand_relations = col_e.checkbox("FK Relation Expansion", value=True)
     max_hops = col_f.slider("Max Relation Hops", min_value=0, max_value=4, value=2)
 
-    if st.button("Search", type="primary"):
-        if str(provider).lower() == "fake" and mode in {"semantic", "hybrid"}:
-            st.error("Fake embedding provider에서는 Semantic/Hybrid를 기본 차단합니다. Keyword 모드를 사용하세요.")
+    if st.button("Search", type="primary", key="btn_search"):
+        if not search_target:
+            st.error("Target을 선택하세요.")
+        elif str(provider).lower() == "fake" and mode in {"semantic", "hybrid"}:
+            st.error(
+                "Fake embedding provider에서는 Semantic/Hybrid를 기본 차단합니다. "
+                "Keyword 모드를 사용하세요."
+            )
         else:
             with st.spinner("검색 중..."):
                 try:
@@ -96,9 +527,10 @@ with tab_search:
                         "expand_relations": expand_relations,
                         "max_relation_hops": max_hops,
                         "debug": True,
+                        "source_id": search_target["id"],
                     }
-                    search_resp = requests.post(
-                        f"{BACKEND_URL}/api/v1/search/schema",
+                    search_resp = api_post(
+                        "/api/v1/search/schema",
                         json=payload,
                         timeout=180,
                     )
@@ -118,6 +550,8 @@ with tab_search:
                         )
                         st.caption(
                             f"mode={data.get('mode')} model_key={data.get('model_key')} "
+                            f"source_id={data.get('source_id')} "
+                            f"source_name={data.get('source_name')} "
                             f"elapsed_ms={data.get('elapsed_ms'):.1f}"
                         )
                         if data.get("timings"):
@@ -170,15 +604,25 @@ with tab_search:
 
     st.divider()
     with st.expander("Pipeline 유틸 (Analyze / Rebuild / Embed)", expanded=False):
-        if st.button("Schema Analyze"):
-            r = requests.post(f"{BACKEND_URL}/api/v1/schema/analyze", timeout=120)
-            st.json(r.json() if r.ok else {"error": r.text})
-        if st.button("Search Document Rebuild"):
-            r = requests.post(f"{BACKEND_URL}/api/v1/embeddings/documents/rebuild", timeout=120)
-            st.json(r.json() if r.ok else {"error": r.text})
-        if st.button("Embedding Run"):
-            r = requests.post(f"{BACKEND_URL}/api/v1/embeddings/run", timeout=3600)
-            st.json(r.json() if r.ok else {"error": r.text})
+        src = (search_target or {}).get("source_name") if search_target else "medical_demo"
+        st.caption(f"source query param = `{src}`")
+        if st.button("Schema Analyze (medical_demo)", key="search_util_analyze"):
+            r = api_post("/api/v1/schema/analyze", timeout=120)
+            show_response(r)
+        if st.button("Search Document Rebuild", key="search_util_rebuild"):
+            r = api_post(
+                f"/api/v1/embeddings/documents/rebuild?source={src}",
+                timeout=300,
+            )
+            show_response(r)
+        if st.button("Embedding Run", key="search_util_embed"):
+            r = api_post(f"/api/v1/embeddings/run?source={src}", timeout=3600)
+            show_response(r)
+
+
+# ---------------------------------------------------------------------------
+# Tab 4: Evaluation Results
+# ---------------------------------------------------------------------------
 
 with tab_eval:
     st.markdown("### Evaluation Result Viewer")
@@ -253,8 +697,6 @@ with tab_eval:
         if os.path.exists(fail_csv):
             st.markdown("#### Failure Queries")
             try:
-                import csv
-
                 with open(fail_csv, encoding="utf-8") as f:
                     fails = list(csv.DictReader(f))
                 st.dataframe(fails[:100], use_container_width=True)
@@ -263,8 +705,6 @@ with tab_eval:
         if os.path.exists(query_csv):
             st.markdown("#### Query Detail")
             try:
-                import csv
-
                 with open(query_csv, encoding="utf-8") as f:
                     qrows = list(csv.DictReader(f))
                 qids = sorted({r["query_id"] for r in qrows})
@@ -294,4 +734,3 @@ with tab_eval:
                     )
             except Exception as exc:  # noqa: BLE001
                 st.warning(f"query_results.csv 로드 실패: {exc}")
-
