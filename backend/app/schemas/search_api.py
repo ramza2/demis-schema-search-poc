@@ -16,6 +16,9 @@ class SchemaSearchRequest(BaseModel):
     expand_relations: bool = True
     max_relation_hops: int = Field(default=2, ge=0, le=4)
     debug: bool = False
+    # Multi-target isolation. When omitted, medical_demo is used (evaluation baseline).
+    source_id: int | None = None
+    source_name: str | None = None
 
 
 class QueryInfo(BaseModel):
@@ -70,6 +73,8 @@ class SchemaSearchResponse(BaseModel):
     mode: str
     model_key: str | None = None
     object_type: str
+    source_id: int | None = None
+    source_name: str | None = None
     direct_results: list[DirectResultOut] = Field(default_factory=list)
     related_tables: list[RelatedTableOut] = Field(default_factory=list)
     elapsed_ms: float

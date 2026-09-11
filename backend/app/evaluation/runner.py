@@ -196,12 +196,24 @@ def run_evaluation(
 
         provider = get_embedding_provider(settings)
         model_key = provider.model_key
+        # Official evaluation always uses medical_demo source isolation.
+        from sqlalchemy import select as sa_select
+
+        from app.models.catalog import CatalogSource
+
+        medical = session.scalar(
+            sa_select(CatalogSource).where(CatalogSource.source_name == "medical_demo")
+        )
+        if medical is None:
+            raise OfficialEvaluationError("catalog_source 'medical_demo' is required for evaluation")
+        eval_source_id = int(medical.id)
+
         needs_semantic = any(e.mode in {"semantic", "hybrid"} for e in (experiments or EXPERIMENTS))
         if needs_semantic:
-            cnt = embedding_count(session, model_key)
+            cnt = embedding_count(session, model_key, source_id=eval_source_id)
             if cnt == 0:
                 raise OfficialEvaluationError(
-                    f"No embeddings for model_key={model_key}. "
+                    f"No embeddings for model_key={model_key} source=medical_demo. "
                     "Run POST /api/v1/embeddings/run first."
                 )
 
@@ -217,6 +229,7 @@ def run_evaluation(
                     top_k=3,
                     expand_terms=False,
                     expand_relations_enabled=False,
+                    source_id=eval_source_id,
                 )
             except SearchError:
                 pass
@@ -231,6 +244,7 @@ def run_evaluation(
                     expand_terms=exp.expand_terms,
                     expand_relations_enabled=exp.expand_relations,
                     max_relation_hops=exp.max_relation_hops if exp.expand_relations else 0,
+                    source_id=eval_source_id,
                 )
                 rows.append(
                     evaluate_query_result(
