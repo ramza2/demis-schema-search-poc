@@ -5,11 +5,13 @@ from __future__ import annotations
 import time
 from dataclasses import dataclass, field
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.config import Settings, get_settings
 from app.embeddings.base import EmbeddingProvider
 from app.embeddings.factory import get_embedding_provider
+from app.models.catalog import CatalogSource
 from app.services.search.keyword import keyword_search, tokenize
 from app.services.search.query_normalizer import normalize_query
 from app.services.search.relation_expander import RelatedTableHit, TableKey, expand_relations
@@ -58,6 +60,8 @@ class SearchResult:
     elapsed_ms: float
     timings: dict[str, float] = field(default_factory=dict)
     debug: dict | None = None
+    source_id: int | None = None
+    source_name: str | None = None
 
 
 def _candidate_limit(top_k: int, settings: Settings) -> int:
@@ -69,6 +73,32 @@ def _snippet(text: str, limit: int = 240) -> str:
     if len(text) <= limit:
         return text
     return text[: limit - 1] + "…"
+
+
+def resolve_search_source(
+    session: Session,
+    *,
+    source_id: int | None = None,
+    source_name: str | None = None,
+) -> tuple[int, str]:
+    """Resolve Target for search isolation. Default: medical_demo baseline."""
+    source = None
+    if source_id is not None:
+        source = session.get(CatalogSource, int(source_id))
+    elif source_name:
+        source = session.scalar(
+            select(CatalogSource).where(CatalogSource.source_name == source_name.strip())
+        )
+    else:
+        source = session.scalar(
+            select(CatalogSource).where(CatalogSource.source_name == "medical_demo")
+        )
+    if source is None or not source.enabled:
+        raise SearchError(
+            "SOURCE_NOT_FOUND",
+            "Target source not found or disabled. Pass source_id or register medical_demo.",
+        )
+    return int(source.id), source.source_name
 
 
 class SchemaSearchService:
@@ -94,11 +124,17 @@ class SchemaSearchService:
         expand_relations_enabled: bool = True,
         max_relation_hops: int = 2,
         debug: bool = False,
+        source_id: int | None = None,
+        source_name: str | None = None,
     ) -> SearchResult:
         t_total = time.perf_counter()
         mode_l = (mode or "hybrid").strip().lower()
         if mode_l not in {"semantic", "keyword", "hybrid"}:
             raise SearchError("INVALID_MODE", f"unsupported search mode: {mode}")
+
+        resolved_source_id, resolved_source_name = resolve_search_source(
+            self.session, source_id=source_id, source_name=source_name
+        )
 
         top_k = max(1, min(int(top_k), 50))
         max_relation_hops = max(0, min(int(max_relation_hops), 4))
@@ -130,10 +166,11 @@ class SchemaSearchService:
                     "Set ALLOW_FAKE_SEMANTIC_SEARCH=true for tests, "
                     "or use EMBEDDING_PROVIDER=bge_m3.",
                 )
-            if embedding_count(self.session, model_key) == 0:
+            if embedding_count(self.session, model_key, source_id=resolved_source_id) == 0:
                 raise SearchError(
                     "EMBEDDING_NOT_FOUND",
-                    f"No embeddings found for model_key={model_key}. "
+                    f"No embeddings found for model_key={model_key} "
+                    f"source_id={resolved_source_id}. "
                     "Run POST /api/v1/embeddings/run first.",
                 )
             semantic_query = expansion.expanded_query if expand_terms else norm.normalized
@@ -143,6 +180,7 @@ class SchemaSearchService:
                 query_text=semantic_query,
                 limit=cand_k,
                 object_type=obj_filter,
+                source_id=resolved_source_id,
             )
             timings["query_embedding_ms"] = q_ms
             timings["semantic_search_ms"] = sem_ms
@@ -158,6 +196,7 @@ class SchemaSearchService:
                 expanded_terms=expanded_terms,
                 limit=cand_k,
                 object_type=obj_filter,
+                source_id=resolved_source_id,
             )
             timings["keyword_search_ms"] = kw_ms
 
@@ -251,6 +290,7 @@ class SchemaSearchService:
                 self.session,
                 seed_tables=seeds[:20],
                 max_hops=max_relation_hops,
+                source_id=resolved_source_id,
             )
             direct_keys = {
                 (d.schema_name or "public", d.table_name)
@@ -272,6 +312,8 @@ class SchemaSearchService:
                 "rrf_k": self.settings.search_rrf_k,
                 "relation_count": len(related),
                 "provider": self.settings.embedding_provider,
+                "source_id": resolved_source_id,
+                "source_name": resolved_source_name,
             }
 
         return SearchResult(
@@ -288,4 +330,6 @@ class SchemaSearchService:
             elapsed_ms=elapsed_ms,
             timings=timings,
             debug=dbg,
+            source_id=resolved_source_id,
+            source_name=resolved_source_name,
         )

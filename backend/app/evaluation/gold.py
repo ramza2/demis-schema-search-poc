@@ -99,8 +99,13 @@ def load_gold_dataset(path: Path | str) -> GoldDataset:
     )
 
 
-def _catalog_identities(session: Session) -> tuple[set[str], set[str]]:
-    tables = list(session.scalars(select(CatalogTable).where(CatalogTable.active.is_(True))).all())
+def _catalog_identities(
+    session: Session, *, source_id: int | None = None
+) -> tuple[set[str], set[str]]:
+    table_stmt = select(CatalogTable).where(CatalogTable.active.is_(True))
+    if source_id is not None:
+        table_stmt = table_stmt.where(CatalogTable.source_id == int(source_id))
+    tables = list(session.scalars(table_stmt).all())
     table_ids = {f"{t.schema_name}.{t.table_name}" for t in tables}
     by_id = {t.id: t for t in tables}
     cols = list(session.scalars(select(CatalogColumn)).all())
@@ -113,13 +118,26 @@ def _catalog_identities(session: Session) -> tuple[set[str], set[str]]:
     return table_ids, col_ids
 
 
+def _resolve_medical_demo_source_id(session: Session) -> int | None:
+    from app.models.catalog import CatalogSource
+
+    source = session.scalar(
+        select(CatalogSource).where(CatalogSource.source_name == "medical_demo")
+    )
+    return int(source.id) if source is not None else None
+
+
 def validate_gold_dataset(
     dataset: GoldDataset,
     *,
     session: Session | None = None,
     require_catalog: bool = True,
+    source_id: int | None = None,
 ) -> list[str]:
-    """Return list of validation error messages (empty if valid)."""
+    """Return list of validation error messages (empty if valid).
+
+    Official gold validation is scoped to medical_demo (evaluation baseline).
+    """
     errors: list[str] = []
     if not dataset.queries:
         errors.append("gold dataset has no queries")
@@ -137,7 +155,10 @@ def validate_gold_dataset(
         if session is None:
             errors.append("catalog session required for gold validation")
         else:
-            table_ids, col_ids = _catalog_identities(session)
+            resolved = source_id
+            if resolved is None:
+                resolved = _resolve_medical_demo_source_id(session)
+            table_ids, col_ids = _catalog_identities(session, source_id=resolved)
 
     for q in dataset.queries:
         if not q.id.strip():

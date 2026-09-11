@@ -35,6 +35,8 @@ def search_schema(body: SchemaSearchRequest) -> SchemaSearchResponse:
             expand_relations_enabled=body.expand_relations,
             max_relation_hops=body.max_relation_hops,
             debug=body.debug,
+            source_id=body.source_id,
+            source_name=body.source_name,
         )
         return SchemaSearchResponse(
             query=QueryInfo(
@@ -47,6 +49,8 @@ def search_schema(body: SchemaSearchRequest) -> SchemaSearchResponse:
             mode=result.mode,
             model_key=result.model_key,
             object_type=result.object_type,
+            source_id=result.source_id,
+            source_name=result.source_name,
             direct_results=[
                 DirectResultOut(
                     rank=d.rank,

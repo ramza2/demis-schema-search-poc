@@ -31,6 +31,7 @@ def semantic_search(
     query_text: str,
     limit: int,
     object_type: str | None = None,
+    source_id: int | None = None,
 ) -> tuple[list[SemanticHit], float, float]:
     """Exact cosine search. Score = 1 - cosine_distance.
 
@@ -49,10 +50,14 @@ def semantic_search(
     vec_literal = "[" + ",".join(f"{float(x):.8f}" for x in qvec) + "]"
 
     type_filter = ""
+    source_filter = ""
     params: dict = {"model_key": model_key, "limit": int(limit), "qvec": vec_literal}
     if object_type and object_type.upper() in {"TABLE", "COLUMN"}:
         type_filter = "AND d.object_type = :object_type"
         params["object_type"] = object_type.upper()
+    if source_id is not None:
+        source_filter = "AND d.source_id = :source_id"
+        params["source_id"] = int(source_id)
 
     sql = f"""
         SELECT
@@ -71,6 +76,7 @@ def semantic_search(
         WHERE d.active = true
           AND e.model_key = :model_key
           {type_filter}
+          {source_filter}
         ORDER BY e.embedding <=> CAST(:qvec AS vector)
         LIMIT :limit
     """
@@ -96,12 +102,15 @@ def semantic_search(
     return hits, query_embedding_ms, semantic_search_ms
 
 
-def embedding_count(session: Session, model_key: str) -> int:
-    return int(
-        session.scalar(
-            select(func.count())
-            .select_from(CatalogEmbedding)
-            .where(CatalogEmbedding.model_key == model_key)
-        )
-        or 0
+def embedding_count(session: Session, model_key: str, source_id: int | None = None) -> int:
+    from app.models.catalog import CatalogSearchDocument
+
+    stmt = (
+        select(func.count())
+        .select_from(CatalogEmbedding)
+        .join(CatalogSearchDocument, CatalogSearchDocument.id == CatalogEmbedding.search_document_id)
+        .where(CatalogEmbedding.model_key == model_key, CatalogSearchDocument.active.is_(True))
     )
+    if source_id is not None:
+        stmt = stmt.where(CatalogSearchDocument.source_id == int(source_id))
+    return int(session.scalar(stmt) or 0)

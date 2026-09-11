@@ -138,3 +138,100 @@ docker compose exec -e EMBEDDING_PROVIDER=fake -e ALLOW_FAKE_SEMANTIC_SEARCH=tru
 - Search Weight / Dictionary 튜닝
 - HNSW / LLM / SQL 생성·실행 / Query Router / RAG
 - 실제 DEMIS / 환자 데이터 검색
+
+## 13. Multi-DB Architecture
+
+Catalog DB(`schema_catalog`)는 **분석 메타데이터 저장소**이고, Target DB는 읽기 전용 Schema Inspect 대상입니다.
+
+- Target 등록 → (비밀번호는 요청 시에만 사용, 미저장) → Inspector → `CatalogWriter` upsert → Search Document / Embedding
+- 모든 Catalog row는 `source_id`로 Target을 구분합니다. 동일 물리 테이블명이라도 Source 간 혼합되지 않습니다.
+- **Evaluation Baseline은 계속 `medical_demo`(PostgreSQL mock)** 입니다. Gold Dataset / Terminology / Official Evaluation 결과 / Search Ranking 공식은 Multi-DB 확장과 분리되어 유지됩니다.
+
+## 14. Supported DBMS + Drivers
+
+| DBMS | Driver | Inspector |
+|------|--------|-----------|
+| PostgreSQL | `psycopg` (`postgresql+psycopg`) | `PostgreSQLSchemaInspector` |
+| MySQL | `PyMySQL` (`mysql+pymysql`) | `MySQLSchemaInspector` |
+| MariaDB | `PyMySQL` (`mysql+pymysql`) | `MariaDBSchemaInspector` |
+| Oracle | `oracledb` Thin (`oracle+oracledb`) | `OracleSchemaInspector` |
+
+Optional local fixtures:
+
+```bash
+docker compose --profile integration-dbs up -d mysql-test mariadb-test
+# MySQL  host port 3307 / MariaDB host port 3308
+# DB=iso_demo user/password=test (root/root)
+```
+
+Init SQL: `database/integration/mysql_init.sql`, `database/integration/mariadb_init.sql`
+(`tb_shared_patient`, `tb_shared_order`, composite PK/FK 등).
+
+## 15. Target Registration / Password Non-persistence
+
+- `POST /api/v1/targets` 등으로 Target Profile을 등록합니다.
+- `catalog_source`에는 host/port/db/user/options만 저장하고 **password는 저장하지 않습니다**.
+- Analyze / probe 시점에만 password를 전달하며, 로그·예외 메시지에서는 마스킹합니다.
+
+## 16. Schema Explorer
+
+Streamlit / API에서 Target(`source_id`)을 선택하면 해당 Source의 Table / Column / FK / Index만 탐색합니다.
+
+- `GET /api/v1/schema/tables?source_id=...`
+- 복합 PK / UNIQUE / 복합 FK / Index ordinal이 Catalog에 보존됩니다.
+
+## 17. Target-scoped Search
+
+Search / Keyword / Semantic / Relation Expansion은 `source_id`(또는 source_name)로 범위가 제한됩니다.
+
+- 다른 Target의 동일 테이블명 Document가 결과에 섞이지 않습니다.
+- Official Evaluation Runner는 `medical_demo` source로 고정합니다.
+
+## 18. Traefik Production Deployment
+
+로컬 기본 `docker-compose.yml`은 **medical-db를 profile 없이** 유지합니다 (pytest/local 기본 동작 유지).
+
+Production override:
+
+- `docker-compose.prod.yml` — medical-db에 `profiles: ["demo"]` (기본 prod는 demo DB 미기동)
+- published port 제거 (`ports: !reset []`)
+- frontend만 외부 Traefik network + Host/`APP_HOST` TLS 라벨
+- backend는 `demis-net` 내부 전용
+
+```bash
+cp .env.production.example .env.production
+# APP_HOST / CATALOG_DB_PASSWORD / TRAEFIK_* 설정
+# 외부 Traefik 네트워크가 이미 있어야 함 (스크립트가 생성하지 않음)
+
+./scripts/deploy.sh          # deploy (default)
+./scripts/deploy.sh status
+./scripts/deploy.sh logs
+./scripts/deploy.sh down     # volumes 유지 (-v 없음)
+
+# medical_demo 가 필요하면:
+docker compose --env-file .env.production \
+  -f docker-compose.yml -f docker-compose.prod.yml --profile demo up -d
+```
+
+Optional Traefik middleware: **빈 `middlewares=` 라벨은 Traefik 오류를 유발**하므로 prod compose에 기본 포함하지 않습니다.
+필요할 때만 non-empty 값으로 라벨을 추가하세요 (`.env.production.example` 주석 참고).
+
+## 19. Oracle Thin Mode
+
+- `python-oracledb` **Thin mode** (Instant Client 불필요)
+- Easy Connect: `host:port/?service_name=...`
+- System schema(SYS/SYSTEM 등)는 inspect 대상에서 제외
+
+Live smoke (환경 변수 전부 있을 때만 실행):
+
+```bash
+ORACLE_TEST_HOST=... ORACLE_TEST_PORT=1521 \
+ORACLE_TEST_USER=... ORACLE_TEST_PASSWORD=... \
+ORACLE_TEST_SERVICE=... pytest backend/tests/test_oracle_live.py -q
+```
+
+## 20. Network / Firewall Requirements
+
+- Backend → Target DB: DBMS 포트만 (PostgreSQL 5432, MySQL/MariaDB 3306, Oracle 1521 등). **스키마 메타데이터 SELECT만** 수행합니다.
+- Prod: 브라우저 → Traefik (443) → frontend:8501 → backend:8000 (내부 DNS). backend/catalog DB 포트는 호스트에 publish하지 않습니다.
+- Traefik Docker network(`TRAEFIK_NETWORK`, 기본 `traefik`)는 사전 생성되어 있어야 합니다.
