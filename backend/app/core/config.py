@@ -11,7 +11,7 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
     app_name: str = "DEMIS Schema Semantic Search PoC"
-    current_step: str = "Step 1 - Foundation / Mock Medical DB"
+    current_step: str = "Step 2 - Schema Analyzer / Schema Catalog"
     log_level: str = "INFO"
 
     medical_db_host: str = "localhost"
