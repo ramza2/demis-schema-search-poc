@@ -118,6 +118,7 @@ services:
     container_name: demis-frontend
     volumes:
       - ./frontend/app.py:/app/app.py:ro
+      - ./frontend/helpers.py:/app/helpers.py:ro
       # Read Evaluation Results written by backend (./backend/evaluation:/app/evaluation)
       - ./backend/evaluation/results:/app/evaluation/results:ro
     environment:
