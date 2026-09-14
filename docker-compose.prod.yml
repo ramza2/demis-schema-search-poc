@@ -36,6 +36,8 @@ services:
       EMBEDDING_PROVIDER: ${EMBEDDING_PROVIDER:-fake}
       EMBEDDING_MODEL_PATH: ${EMBEDDING_MODEL_PATH:-}
       HF_HUB_OFFLINE: ${HF_HUB_OFFLINE:-false}
+      # medical-db is demo-profile only; do not degrade /health when it is absent
+      MEDICAL_DB_REQUIRED: ${MEDICAL_DB_REQUIRED:-false}
 
   frontend:
     ports: !reset []

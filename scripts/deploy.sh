@@ -75,7 +75,7 @@ wait_for_health() {
     frontend_ok=0
 
     if "${COMPOSE[@]}" exec -T backend \
-      python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health').read()" \
+      python -c "import json,urllib.request; p=json.loads(urllib.request.urlopen('http://127.0.0.1:8000/health').read()); assert p.get('status')=='ok' and p.get('backend')=='ok' and p.get('catalog_db')=='ok', p" \
       >/dev/null 2>&1; then
       backend_ok=1
     fi

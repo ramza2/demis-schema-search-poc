@@ -30,6 +30,8 @@ class Settings(BaseSettings):
     medical_db_name: str = "medical_demo"
     medical_db_user: str = "medical_user"
     medical_db_password: str = "medical_pass_change_me"
+    # When false (production without demo profile), medical_demo outage does not degrade /health.
+    medical_db_required: bool = True
 
     catalog_db_host: str = "localhost"
     catalog_db_port: int = 5432
