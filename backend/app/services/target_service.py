@@ -19,6 +19,7 @@ from app.db.target_connection import (
     DEFAULT_PORTS,
     TargetConnectionInfo,
     create_target_engine,
+    is_connection_timeout_error,
     mask_secrets,
     normalize_db_type,
     probe_connection,
@@ -35,6 +36,10 @@ from app.schemas.target_api import TargetCreate, TargetUpdate
 from app.services.catalog_writer import CatalogWriter, schema_snapshot_fingerprint
 
 logger = logging.getLogger(__name__)
+
+
+class TargetConnectionTimeoutError(RuntimeError):
+    """Target DB connect exceeded configured driver timeout."""
 
 
 def _utcnow() -> datetime:
@@ -68,6 +73,19 @@ def _source_to_connection_info(source: CatalogSource) -> TargetConnectionInfo:
 class TargetService:
     def __init__(self, settings: Settings | None = None) -> None:
         self.settings = settings or get_settings()
+
+    def _connect_timeout_seconds(self) -> float:
+        return float(self.settings.target_db_connect_timeout_seconds)
+
+    def _raise_connection_error(self, exc: BaseException, password: str) -> None:
+        safe = _safe_error_message(exc, password, settings=self.settings)
+        timeout_s = self._connect_timeout_seconds()
+        if is_connection_timeout_error(exc):
+            raise TargetConnectionTimeoutError(
+                f"Target DB connection timed out after {timeout_s:g}s. "
+                f"Check host/port/firewall. Details: {safe}"
+            ) from None
+        raise RuntimeError(safe) from None
 
     def _session(self) -> Session:
         ensure_catalog_schema(self.settings)
@@ -155,12 +173,17 @@ class TargetService:
             if source is None:
                 raise LookupError(f"target not found: {target_id}")
             info = _source_to_connection_info(source)
-            engine = create_target_engine(info, password)
+            engine = create_target_engine(
+                info,
+                password,
+                connect_timeout_seconds=self._connect_timeout_seconds(),
+            )
             return probe_connection(engine, info.db_type)
         except LookupError:
             raise
         except Exception as exc:  # noqa: BLE001
-            raise RuntimeError(_safe_error_message(exc, password, settings=self.settings)) from exc
+            self._raise_connection_error(exc, password)
+            raise  # pragma: no cover
         finally:
             if engine is not None:
                 engine.dispose()
@@ -174,13 +197,18 @@ class TargetService:
             if source is None:
                 raise LookupError(f"target not found: {target_id}")
             info = _source_to_connection_info(source)
-            engine = create_target_engine(info, password)
+            engine = create_target_engine(
+                info,
+                password,
+                connect_timeout_seconds=self._connect_timeout_seconds(),
+            )
             inspector = create_schema_inspector(info.db_type, engine, info.database_name)
             return inspector.list_schemas()
         except LookupError:
             raise
         except Exception as exc:  # noqa: BLE001
-            raise RuntimeError(_safe_error_message(exc, password, settings=self.settings)) from exc
+            self._raise_connection_error(exc, password)
+            raise  # pragma: no cover
         finally:
             if engine is not None:
                 engine.dispose()
@@ -221,7 +249,11 @@ class TargetService:
             session.refresh(run)
 
             info = _source_to_connection_info(source)
-            engine = create_target_engine(info, password)
+            engine = create_target_engine(
+                info,
+                password,
+                connect_timeout_seconds=self._connect_timeout_seconds(),
+            )
             inspector = create_schema_inspector(info.db_type, engine, info.database_name)
 
             snapshots = [inspector.inspect(schema_name=s) for s in schema_list]

@@ -15,7 +15,7 @@ from app.schemas.target_api import (
     TargetUpdate,
     TestConnectionResponse,
 )
-from app.services.target_service import TargetService
+from app.services.target_service import TargetConnectionTimeoutError, TargetService
 
 router = APIRouter(prefix="/api/v1/targets", tags=["targets"])
 
@@ -29,6 +29,8 @@ def _http_from_value(exc: ValueError) -> HTTPException:
 
 
 def _http_from_runtime(exc: RuntimeError) -> HTTPException:
+    if isinstance(exc, TargetConnectionTimeoutError):
+        return HTTPException(status_code=504, detail=str(exc))
     return HTTPException(status_code=502, detail=str(exc))
 
 

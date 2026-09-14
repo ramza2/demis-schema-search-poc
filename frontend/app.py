@@ -10,6 +10,14 @@ from typing import Any
 import requests
 import streamlit as st
 
+from helpers import (
+    DISCOVER_SCHEMAS_TIMEOUT_SECONDS,
+    HOST_INPUT_HINT,
+    LOAD_TARGETS_TIMEOUT_SECONDS,
+    TEST_CONNECTION_TIMEOUT_SECONDS,
+    format_connection_request_error,
+)
+
 BACKEND_URL = os.getenv("BACKEND_URL", "http://localhost:8000").rstrip("/")
 
 DEFAULT_PORTS = {
@@ -33,14 +41,17 @@ def api_post(path: str, **kwargs: Any) -> requests.Response:
     return requests.post(f"{BACKEND_URL}{path}", timeout=kwargs.pop("timeout", 120), **kwargs)
 
 
-def load_targets() -> list[dict[str, Any]]:
+def load_targets() -> tuple[list[dict[str, Any]], str | None]:
+    """Load targets without stopping the page. Returns (targets, error_message)."""
     try:
-        resp = api_get("/api/v1/targets")
+        resp = api_get("/api/v1/targets", timeout=LOAD_TARGETS_TIMEOUT_SECONDS)
         resp.raise_for_status()
-        return resp.json()
+        data = resp.json()
+        if not isinstance(data, list):
+            return [], "Unexpected targets payload"
+        return data, None
     except Exception as exc:  # noqa: BLE001
-        st.warning(f"Target 목록 로드 실패: {exc}")
-        return []
+        return [], str(exc)
 
 
 def target_label(t: dict[str, Any]) -> str:
@@ -133,10 +144,11 @@ except Exception:  # noqa: BLE001
 
 st.divider()
 
-targets = load_targets()
+# Create tabs before Target API calls so navigation stays available on timeouts.
 tab_targets, tab_explorer, tab_search, tab_eval = st.tabs(
     ["Targets", "Schema Explorer", "Schema Search", "Evaluation Results"]
 )
+targets, targets_load_error = load_targets()
 
 
 # ---------------------------------------------------------------------------
@@ -145,6 +157,8 @@ tab_targets, tab_explorer, tab_search, tab_eval = st.tabs(
 
 with tab_targets:
     st.markdown("### Target 목록")
+    if targets_load_error:
+        st.warning(f"Target 목록을 불러오지 못했습니다: {targets_load_error}")
     if targets:
         rows = [
             {
@@ -180,6 +194,7 @@ with tab_targets:
     with st.form("add_target_form", clear_on_submit=True):
         source_name = st.text_input("Source Name", placeholder="my_target")
         host = st.text_input("Host", value="localhost")
+        st.caption(HOST_INPUT_HINT)
         username = st.text_input("Username")
 
         database_name = ""
@@ -259,11 +274,11 @@ with tab_targets:
                         r = api_post(
                             f"/api/v1/targets/{selected['id']}/test",
                             json={"password": password},
-                            timeout=60,
+                            timeout=TEST_CONNECTION_TIMEOUT_SECONDS,
                         )
                         show_response(r)
                     except Exception as exc:  # noqa: BLE001
-                        st.error(f"Test Connection 실패: {exc}")
+                        st.error(format_connection_request_error(exc))
         with b2:
             if st.button("Discover Schemas", key="btn_discover"):
                 if not password:
@@ -273,7 +288,7 @@ with tab_targets:
                         r = api_post(
                             f"/api/v1/targets/{selected['id']}/schemas",
                             json={"password": password},
-                            timeout=60,
+                            timeout=DISCOVER_SCHEMAS_TIMEOUT_SECONDS,
                         )
                         show_response(r)
                         if r.ok:
@@ -281,7 +296,7 @@ with tab_targets:
                                 r.json().get("schemas") or []
                             )
                     except Exception as exc:  # noqa: BLE001
-                        st.error(f"Discover Schemas 실패: {exc}")
+                        st.error(format_connection_request_error(exc))
 
         discovered = st.session_state.get(f"discovered_schemas_{selected['id']}", [])
         schema_options = discovered or (
