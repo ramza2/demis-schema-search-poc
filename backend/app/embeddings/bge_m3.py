@@ -7,36 +7,25 @@ import os
 from pathlib import Path
 
 from app.embeddings.base import EmbeddingProvider
+from app.embeddings.errors import (
+    DimensionMismatchError,
+    EmbeddingError,
+    EmbeddingFailedError,
+    ModelLoadFailedError,
+    ModelNotAvailableError,
+)
 
 logger = logging.getLogger(__name__)
 
-
-class EmbeddingError(Exception):
-    """Base embedding error with a stable machine-readable code."""
-
-    def __init__(self, code: str, message: str) -> None:
-        self.code = code
-        super().__init__(message)
-
-
-class ModelNotAvailableError(EmbeddingError):
-    def __init__(self, message: str) -> None:
-        super().__init__("MODEL_NOT_AVAILABLE", message)
-
-
-class ModelLoadFailedError(EmbeddingError):
-    def __init__(self, message: str) -> None:
-        super().__init__("MODEL_LOAD_FAILED", message)
-
-
-class EmbeddingFailedError(EmbeddingError):
-    def __init__(self, message: str) -> None:
-        super().__init__("EMBEDDING_FAILED", message)
-
-
-class DimensionMismatchError(EmbeddingError):
-    def __init__(self, message: str) -> None:
-        super().__init__("DIMENSION_MISMATCH", message)
+# Re-export for backward-compatible imports from app.embeddings.bge_m3.
+__all__ = [
+    "BgeM3EmbeddingProvider",
+    "DimensionMismatchError",
+    "EmbeddingError",
+    "EmbeddingFailedError",
+    "ModelLoadFailedError",
+    "ModelNotAvailableError",
+]
 
 
 class BgeM3EmbeddingProvider(EmbeddingProvider):

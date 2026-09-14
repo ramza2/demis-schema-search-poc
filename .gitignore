@@ -224,3 +224,9 @@ model-cache/
 **/hf-cache/
 **/.cache/huggingface/
 **/.cache/torch/
+
+# Evaluation runtime outputs (keep baseline + .gitkeep tracked)
+backend/evaluation/results/*
+!backend/evaluation/results/.gitkeep
+!backend/evaluation/results/bge_step5_official/
+!backend/evaluation/results/bge_step5_official/**
