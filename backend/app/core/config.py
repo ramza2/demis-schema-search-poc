@@ -40,7 +40,7 @@ class Settings(BaseSettings):
     catalog_db_password: str = "catalog_pass_change_me"
 
     # Embedding (Step 3) — CPU-only by default; no generative LLM.
-    embedding_provider: str = "bge_m3"  # bge_m3 | fake
+    embedding_provider: str = "bge_m3"  # bge_m3 | fake | openai_compatible
     embedding_model_name: str = "BAAI/bge-m3"
     embedding_model_path: str | None = None
     embedding_model_revision: str | None = None
@@ -51,6 +51,10 @@ class Settings(BaseSettings):
     embedding_normalize: bool = True
     embedding_num_threads: int | None = None
     hf_hub_offline: bool = False
+    # OpenAI-compatible remote embedding API (optional).
+    embedding_api_url: str | None = None
+    embedding_api_key: str | None = None
+    embedding_api_timeout_seconds: float = 60.0
 
     # Step 4 search settings
     allow_fake_semantic_search: bool = False
@@ -64,11 +68,20 @@ class Settings(BaseSettings):
         "embedding_model_revision",
         "embedding_num_threads",
         "medical_terms_path",
+        "embedding_api_url",
+        "embedding_api_key",
         mode="before",
     )
     @classmethod
     def _optional_empty_to_none(cls, value: Any) -> Any:
         return _empty_as_none(value)
+
+    @field_validator("embedding_api_url", mode="after")
+    @classmethod
+    def _strip_trailing_slash(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        return value.rstrip("/")
 
     @property
     def medical_db_url(self) -> str:

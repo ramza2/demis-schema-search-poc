@@ -164,7 +164,8 @@ class SchemaSearchService:
                     "SEMANTIC_PROVIDER_NOT_AVAILABLE",
                     "Fake embedding provider is for tests only. "
                     "Set ALLOW_FAKE_SEMANTIC_SEARCH=true for tests, "
-                    "or use EMBEDDING_PROVIDER=bge_m3.",
+                    "or use a real embedding provider "
+                    "(EMBEDDING_PROVIDER=bge_m3 or openai_compatible).",
                 )
             if embedding_count(self.session, model_key, source_id=resolved_source_id) == 0:
                 raise SearchError(

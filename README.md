@@ -18,13 +18,40 @@ Top-1 / Hit@K / Mean Recall@K / MRR / Latency를 산출합니다.
 
 | Item | Value |
 |------|-------|
-| Embedding | BAAI/bge-m3, CPU, dim=1024 |
+| Embedding | BAAI/bge-m3, dim=1024 (local `bge_m3` or remote `openai_compatible`) |
 | Semantic | pgvector exact cosine |
 | Keyword | PostgreSQL FTS/token |
 | Hybrid | RRF K=60 |
 | Terminology | `backend/app/resources/medical_terms.json` |
 | Relation | FK BFS max hop 2 |
 | LLM / NL→SQL | None |
+
+### Embedding provider 구성
+
+**로컬 모델**
+
+```bash
+EMBEDDING_PROVIDER=bge_m3
+EMBEDDING_MODEL_NAME=BAAI/bge-m3
+EMBEDDING_MODEL_PATH=/models/local/bge-m3
+EMBEDDING_DIMENSION=1024
+EMBEDDING_NORMALIZE=true
+```
+
+**공용 OpenAI-compatible API (ALZI)**
+
+```bash
+EMBEDDING_PROVIDER=openai_compatible
+EMBEDDING_API_URL=https://alzi-embedding.openlink.kr
+EMBEDDING_API_KEY=
+EMBEDDING_API_TIMEOUT_SECONDS=60
+EMBEDDING_MODEL_NAME=BAAI/bge-m3
+EMBEDDING_DIMENSION=1024
+EMBEDDING_NORMALIZE=true
+```
+
+문서 Embedding과 Query Embedding은 동일 provider / `model_key`를 사용합니다.
+원격 API URL은 `model_key`에 포함되지 않습니다.
 
 ## 3. Evaluation 목적
 
