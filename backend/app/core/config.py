@@ -59,6 +59,10 @@ class Settings(BaseSettings):
     # External Target DB connect timeout (seconds) for Test Connection / Inspect.
     target_db_connect_timeout_seconds: float = 5.0
 
+    # Fernet key used to encrypt Target DB passwords at rest (never commit real values).
+    # Generate: python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+    target_credential_encryption_key: str | None = None
+
     # Step 4 search settings
     allow_fake_semantic_search: bool = False
     search_rrf_k: int = 60
@@ -73,11 +77,22 @@ class Settings(BaseSettings):
         "medical_terms_path",
         "embedding_api_url",
         "embedding_api_key",
+        "target_credential_encryption_key",
         mode="before",
     )
     @classmethod
     def _optional_empty_to_none(cls, value: Any) -> Any:
         return _empty_as_none(value)
+
+    @field_validator("target_credential_encryption_key", mode="after")
+    @classmethod
+    def _validate_credential_key(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        from app.security.credential_crypto import validate_encryption_key
+
+        validate_encryption_key(value)
+        return value.strip()
 
     @field_validator("embedding_api_url", mode="after")
     @classmethod

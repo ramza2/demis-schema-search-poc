@@ -207,14 +207,22 @@ docker compose --profile integration-dbs up -d mysql-test mariadb-test
 Init SQL: `database/integration/mysql_init.sql`, `database/integration/mariadb_init.sql`
 (`tb_shared_patient`, `tb_shared_order`, composite PK/FK 등).
 
-## 15. Target Registration / Password Non-persistence
+## 15. Target Registration / Encrypted Credentials
 
 - `TARGET_DB_CONNECT_TIMEOUT_SECONDS` (default `5`): driver-level connect timeout for Test Connection / schema discover / analyze.
 - Host에는 protocol(`http://`)이나 URL path 없이 hostname 또는 IP만 입력하세요. 방화벽/DNS 오류 시 위 timeout 안에 실패합니다.
+- `TARGET_CREDENTIAL_ENCRYPTION_KEY`: Fernet key used to encrypt Target DB passwords at rest.
+  Generate with `python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"`.
+  Never commit a real key; set it in `.env` / `.env.production` only.
 
-- `POST /api/v1/targets` 등으로 Target Profile을 등록합니다.
-- `catalog_source`에는 host/port/db/user/options만 저장하고 **password는 저장하지 않습니다**.
-- Analyze / probe 시점에만 password를 전달하며, 로그·예외 메시지에서는 마스킹합니다.
+- `POST /api/v1/targets` 등록 시 `password`를 함께 전달하면 Catalog DB의 `catalog_source.encrypted_password`에 **암호화 저장**합니다 (평문 저장 금지).
+- API 응답에는 password / ciphertext를 반환하지 않으며 `has_saved_password: true|false`만 제공합니다.
+- Test Connection / Discover Schemas / Analyze는 저장된 credential을 기본 사용합니다.
+  request에 `password`가 있으면 해당 요청에서만 우선 사용하며 저장하지 않습니다.
+- Target 수정(`PUT`) 시 password 생략 → 기존 credential 유지, 새 password → 교체, `clear_saved_password=true` → 삭제.
+- Target 삭제(`DELETE /api/v1/targets/{id}`) 시 해당 source의 catalog / search document / embedding 데이터를 함께 정리합니다.
+- 로그·예외 메시지에서는 secret masking을 유지합니다.
+- **기존 Catalog volume migration**: backend 기동 시 `ensure_catalog_schema()`가 `catalog_source.encrypted_password` 컬럼을 `ADD COLUMN IF NOT EXISTS`로 추가합니다. 기존 Target 행은 `NULL`(has_saved_password=false)로 유지되며 데이터 유실 없이 호환됩니다. Edit에서 Password를 저장하면 그때부터 암호화 credential이 채워집니다.
 
 ## 16. Schema Explorer
 

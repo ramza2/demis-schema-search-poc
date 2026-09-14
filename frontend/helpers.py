@@ -32,3 +32,8 @@ def tabs_created_before_targets_load(source: str) -> bool:
     if tabs_idx < 0 or load_idx < 0:
         return False
     return tabs_idx < load_idx
+
+
+def credential_status_label(has_saved_password: bool) -> str:
+    """UI label for whether a Target has an encrypted credential saved."""
+    return "Saved" if has_saved_password else "Not saved"
