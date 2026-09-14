@@ -9,7 +9,12 @@ from app.core.config import get_settings
 from app.db.catalog_bootstrap import ensure_catalog_schema
 from app.db.session import get_catalog_session_factory
 from app.embeddings.factory import get_embedding_provider
-from app.models.catalog import CatalogEmbedding, CatalogEmbeddingRun, CatalogSearchDocument
+from app.models.catalog import (
+    CatalogEmbedding,
+    CatalogEmbeddingRun,
+    CatalogSearchDocument,
+    CatalogSource,
+)
 from app.schemas.embedding_api import (
     DocumentRebuildResponse,
     EmbeddingRunResponse,
@@ -26,6 +31,30 @@ router = APIRouter(prefix="/api/v1/embeddings", tags=["embeddings"])
 def _session():
     ensure_catalog_schema()
     return get_catalog_session_factory()()
+
+
+def _resolve_source_filter(
+    session,
+    *,
+    source_id: int | None,
+    source_name: str | None,
+) -> tuple[int | None, str | None]:
+    """Resolve optional source filter. Both omitted → no filter (backward compatible)."""
+    if source_id is not None:
+        source = session.get(CatalogSource, int(source_id))
+        if source is None:
+            raise HTTPException(status_code=404, detail=f"source_id={source_id} not found")
+        return int(source.id), source.source_name
+    if source_name and source_name.strip():
+        source = session.scalar(
+            select(CatalogSource).where(CatalogSource.source_name == source_name.strip())
+        )
+        if source is None:
+            raise HTTPException(
+                status_code=404, detail=f"source_name={source_name!r} not found"
+            )
+        return int(source.id), source.source_name
+    return None, None
 
 
 @router.post("/documents/rebuild", response_model=DocumentRebuildResponse)
@@ -84,12 +113,20 @@ def run_embedding(source: str = Query(default="medical_demo")) -> EmbeddingRunRe
 
 
 @router.get("/runs", response_model=list[EmbeddingRunSummary])
-def list_runs(limit: int = Query(default=20, ge=1, le=100)) -> list[EmbeddingRunSummary]:
+def list_runs(
+    limit: int = Query(default=20, ge=1, le=100),
+    source_id: int | None = Query(default=None),
+    source_name: str | None = Query(default=None),
+) -> list[EmbeddingRunSummary]:
     session = _session()
     try:
-        rows = session.scalars(
-            select(CatalogEmbeddingRun).order_by(CatalogEmbeddingRun.id.desc()).limit(limit)
-        ).all()
+        resolved_id, _ = _resolve_source_filter(
+            session, source_id=source_id, source_name=source_name
+        )
+        stmt = select(CatalogEmbeddingRun).order_by(CatalogEmbeddingRun.id.desc()).limit(limit)
+        if resolved_id is not None:
+            stmt = stmt.where(CatalogEmbeddingRun.source_id == resolved_id)
+        rows = session.scalars(stmt).all()
         return [
             EmbeddingRunSummary(
                 id=r.id,
@@ -137,15 +174,23 @@ def get_run(run_id: int) -> EmbeddingRunSummary:
 
 
 @router.get("/stats", response_model=EmbeddingStatsResponse)
-def embedding_stats() -> EmbeddingStatsResponse:
+def embedding_stats(
+    source_id: int | None = Query(default=None),
+    source_name: str | None = Query(default=None),
+) -> EmbeddingStatsResponse:
     session = _session()
     cfg = get_settings()
     try:
+        resolved_id, resolved_name = _resolve_source_filter(
+            session, source_id=source_id, source_name=source_name
+        )
+        doc_filters = [CatalogSearchDocument.active.is_(True)]
+        if resolved_id is not None:
+            doc_filters.append(CatalogSearchDocument.source_id == resolved_id)
+
         active_documents = int(
             session.scalar(
-                select(func.count())
-                .select_from(CatalogSearchDocument)
-                .where(CatalogSearchDocument.active.is_(True))
+                select(func.count()).select_from(CatalogSearchDocument).where(*doc_filters)
             )
             or 0
         )
@@ -153,10 +198,7 @@ def embedding_stats() -> EmbeddingStatsResponse:
             session.scalar(
                 select(func.count())
                 .select_from(CatalogSearchDocument)
-                .where(
-                    CatalogSearchDocument.active.is_(True),
-                    CatalogSearchDocument.object_type == "TABLE",
-                )
+                .where(*doc_filters, CatalogSearchDocument.object_type == "TABLE")
             )
             or 0
         )
@@ -164,31 +206,41 @@ def embedding_stats() -> EmbeddingStatsResponse:
             session.scalar(
                 select(func.count())
                 .select_from(CatalogSearchDocument)
-                .where(
-                    CatalogSearchDocument.active.is_(True),
-                    CatalogSearchDocument.object_type == "COLUMN",
-                )
+                .where(*doc_filters, CatalogSearchDocument.object_type == "COLUMN")
             )
             or 0
         )
-        embedding_count = int(
-            session.scalar(select(func.count()).select_from(CatalogEmbedding)) or 0
-        )
-        model_keys = list(
-            session.scalars(select(CatalogEmbedding.model_key).distinct()).all()
-        )
 
-        # Stale: active docs whose fingerprint does not match any embedding for current model_key.
+        emb_stmt = select(func.count()).select_from(CatalogEmbedding)
+        if resolved_id is not None:
+            emb_stmt = emb_stmt.join(
+                CatalogSearchDocument,
+                CatalogSearchDocument.id == CatalogEmbedding.search_document_id,
+            ).where(CatalogSearchDocument.source_id == resolved_id)
+        embedding_count = int(session.scalar(emb_stmt) or 0)
+
+        model_key_stmt = select(CatalogEmbedding.model_key).distinct()
+        if resolved_id is not None:
+            model_key_stmt = model_key_stmt.join(
+                CatalogSearchDocument,
+                CatalogSearchDocument.id == CatalogEmbedding.search_document_id,
+            ).where(CatalogSearchDocument.source_id == resolved_id)
+        model_keys = list(session.scalars(model_key_stmt).all())
+
+        # Stale: active docs whose fingerprint does not match embedding for current model_key.
         provider = get_embedding_provider(cfg)
         current_key = provider.model_key
         active_docs = session.scalars(
-            select(CatalogSearchDocument).where(CatalogSearchDocument.active.is_(True))
+            select(CatalogSearchDocument).where(*doc_filters)
         ).all()
+        emb_query = select(CatalogEmbedding).where(CatalogEmbedding.model_key == current_key)
+        if resolved_id is not None:
+            emb_query = emb_query.join(
+                CatalogSearchDocument,
+                CatalogSearchDocument.id == CatalogEmbedding.search_document_id,
+            ).where(CatalogSearchDocument.source_id == resolved_id)
         emb_by_doc = {
-            e.search_document_id: e
-            for e in session.scalars(
-                select(CatalogEmbedding).where(CatalogEmbedding.model_key == current_key)
-            ).all()
+            e.search_document_id: e for e in session.scalars(emb_query).all()
         }
         stale = 0
         for doc in active_docs:
@@ -206,6 +258,8 @@ def embedding_stats() -> EmbeddingStatsResponse:
             embedding_provider=cfg.embedding_provider,
             embedding_device=cfg.embedding_device,
             embedding_dimension=cfg.embedding_dimension,
+            source_id=resolved_id,
+            source_name=resolved_name,
         )
     finally:
         session.close()
@@ -216,12 +270,19 @@ def list_documents(
     object_type: str | None = None,
     active: bool | None = True,
     name: str | None = None,
+    source_id: int | None = Query(default=None),
+    source_name: str | None = Query(default=None),
     limit: int = Query(default=100, ge=1, le=1000),
 ) -> list[SearchDocumentSummary]:
     session = _session()
     cfg = get_settings()
     try:
+        resolved_id, _ = _resolve_source_filter(
+            session, source_id=source_id, source_name=source_name
+        )
         stmt = select(CatalogSearchDocument)
+        if resolved_id is not None:
+            stmt = stmt.where(CatalogSearchDocument.source_id == resolved_id)
         if object_type:
             stmt = stmt.where(CatalogSearchDocument.object_type == object_type.upper())
         if active is not None:
