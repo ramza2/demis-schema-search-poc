@@ -347,3 +347,138 @@ def test_test_connection_unreachable_host_bounded_timeout(client: TestClient):
             assert "timed out" in detail.lower() or "timeout" in detail.lower()
     finally:
         _delete_target(target_id)
+
+
+def _create_local_target(client: TestClient, name: str | None = None) -> int:
+    source_name = name or f"t_{uuid.uuid4().hex[:8]}"
+    create = client.post(
+        "/api/v1/targets",
+        json={
+            "source_name": source_name,
+            "db_type": "postgresql",
+            "host": "localhost",
+            "port": 5432,
+            "database_name": "demo",
+            "default_schema": "public",
+            "username": "u",
+            "enabled": True,
+        },
+    )
+    assert create.status_code == 201, create.text
+    return int(create.json()["id"])
+
+
+def test_test_connection_timeout_returns_504(client: TestClient, monkeypatch):
+    target_id = _create_local_target(client)
+    password = "must-not-appear-in-timeout-response"
+
+    def boom(*_args, **_kwargs):
+        raise TimeoutError("connection timed out while connecting to server")
+
+    monkeypatch.setattr("app.services.target_service.probe_connection", boom)
+    try:
+        resp = client.post(
+            f"/api/v1/targets/{target_id}/test",
+            json={"password": password},
+        )
+        assert resp.status_code == 504, resp.text
+        detail = str(resp.json().get("detail", ""))
+        assert "timed out" in detail.lower() or "timeout" in detail.lower()
+        assert password not in detail
+        assert "postgresql+psycopg://" not in detail
+    finally:
+        _delete_target(target_id)
+
+
+def test_list_schemas_timeout_returns_504(client: TestClient, monkeypatch):
+    target_id = _create_local_target(client)
+    password = "schema-secret-password-xyz"
+
+    def boom(*_args, **_kwargs):
+        raise TimeoutError("connection timed out")
+
+    # list_schemas connects via engine then inspector; force timeout at engine create
+    monkeypatch.setattr("app.services.target_service.create_target_engine", boom)
+    try:
+        resp = client.post(
+            f"/api/v1/targets/{target_id}/schemas",
+            json={"password": password},
+        )
+        assert resp.status_code == 504, resp.text
+        detail = str(resp.json().get("detail", ""))
+        assert "timed out" in detail.lower() or "timeout" in detail.lower()
+        assert password not in detail
+    finally:
+        _delete_target(target_id)
+
+
+def test_analyze_connection_timeout_returns_504(client: TestClient, monkeypatch):
+    target_id = _create_local_target(client)
+    password = "analyze-secret-password-abc"
+
+    def boom(*_args, **_kwargs):
+        raise TimeoutError("connection timed out during probe")
+
+    monkeypatch.setattr("app.services.target_service.probe_connection", boom)
+    try:
+        resp = client.post(
+            f"/api/v1/targets/{target_id}/analyze",
+            json={"password": password, "schemas": ["public"]},
+        )
+        assert resp.status_code == 504, resp.text
+        detail = str(resp.json().get("detail", ""))
+        assert "timed out" in detail.lower() or "timeout" in detail.lower()
+        assert password not in detail
+        assert "postgresql+psycopg://" not in detail
+    finally:
+        _delete_target(target_id)
+
+
+def test_analyze_schema_inspection_error_returns_failed_run(
+    client: TestClient, monkeypatch
+):
+    target_id = _create_local_target(client)
+    password = "inspect-secret-should-stay-hidden"
+
+    def fake_probe(engine, db_type):  # noqa: ANN001
+        return {
+            "connected": True,
+            "dbms_product": "PostgreSQL",
+            "db_version": "test",
+            "database_or_service": "demo",
+            "current_user": "u",
+        }
+
+    class BoomInspector:
+        def inspect(self, schema_name: str):  # noqa: ANN001
+            raise RuntimeError(f"schema inspection failed for {schema_name}")
+
+        def list_schemas(self):
+            return ["public"]
+
+    def fake_inspector(*_args, **_kwargs):
+        return BoomInspector()
+
+    monkeypatch.setattr("app.services.target_service.probe_connection", fake_probe)
+    monkeypatch.setattr(
+        "app.services.target_service.create_schema_inspector", fake_inspector
+    )
+    # Avoid real DB connect when creating engine
+    monkeypatch.setattr(
+        "app.services.target_service.create_target_engine",
+        lambda *a, **k: MagicMock(),
+    )
+    try:
+        resp = client.post(
+            f"/api/v1/targets/{target_id}/analyze",
+            json={"password": password, "schemas": ["public"]},
+        )
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert body["status"] == "FAILED"
+        assert password not in str(body)
+        err = body.get("error_message") or ""
+        assert password not in err
+        assert "inspection failed" in err.lower() or "FAILED" in body["status"]
+    finally:
+        _delete_target(target_id)

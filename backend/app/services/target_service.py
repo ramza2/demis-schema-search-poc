@@ -214,6 +214,25 @@ class TargetService:
                 engine.dispose()
             session.close()
 
+    def _mark_run_failed(
+        self,
+        session: Session,
+        run: CatalogAnalysisRun | None,
+        safe_msg: str,
+    ) -> CatalogAnalysisRun | None:
+        """Persist FAILED status for an in-flight analysis run (best effort)."""
+        if run is None or run.id is None:
+            return None
+        failed = session.get(CatalogAnalysisRun, run.id)
+        if failed is None:
+            return None
+        failed.status = "FAILED"
+        failed.finished_at = _utcnow()
+        failed.error_message = safe_msg
+        session.commit()
+        session.refresh(failed)
+        return failed
+
     def analyze_target(
         self,
         target_id: int,
@@ -249,79 +268,103 @@ class TargetService:
             session.refresh(run)
 
             info = _source_to_connection_info(source)
-            engine = create_target_engine(
-                info,
-                password,
-                connect_timeout_seconds=self._connect_timeout_seconds(),
-            )
-            inspector = create_schema_inspector(info.db_type, engine, info.database_name)
 
-            snapshots = [inspector.inspect(schema_name=s) for s in schema_list]
-            snapshot = merge_snapshots(snapshots) if len(snapshots) > 1 else snapshots[0]
-            schema_fp = schema_snapshot_fingerprint(snapshot)
+            # Phase 1: connect/probe — timeout -> TargetConnectionTimeoutError (HTTP 504)
+            try:
+                engine = create_target_engine(
+                    info,
+                    password,
+                    connect_timeout_seconds=self._connect_timeout_seconds(),
+                )
+                probe_connection(engine, info.db_type)
+            except Exception as connect_exc:  # noqa: BLE001
+                session.rollback()
+                safe_msg = _safe_error_message(
+                    connect_exc, password, settings=self.settings
+                )
+                logger.exception(
+                    "Target schema analysis connection FAILED: %s", safe_msg
+                )
+                self._mark_run_failed(session, run, safe_msg)
+                self._raise_connection_error(connect_exc, password)
+                raise  # pragma: no cover
 
-            writer = CatalogWriter(session)
-            writer.upsert_snapshot(
-                source_id=source.id,
-                run_id=run.id,
-                snapshot=snapshot,
-                analyzed_schemas=set(schema_list),
-            )
+            # Phase 2: inspect / catalog write — keep FAILED analysis run on errors
+            try:
+                inspector = create_schema_inspector(
+                    info.db_type, engine, info.database_name
+                )
+                snapshots = [inspector.inspect(schema_name=s) for s in schema_list]
+                snapshot = (
+                    merge_snapshots(snapshots) if len(snapshots) > 1 else snapshots[0]
+                )
+                schema_fp = schema_snapshot_fingerprint(snapshot)
 
-            run.status = "SUCCESS"
-            run.finished_at = _utcnow()
-            run.table_count = len(snapshot.tables)
-            run.column_count = len(snapshot.columns)
-            run.relation_count = len(snapshot.foreign_keys)
-            run.index_count = len(snapshot.indexes)
-            run.schema_fingerprint = schema_fp
-            run.error_message = None
-            session.commit()
-            session.refresh(run)
-            logger.info(
-                "Schema analysis SUCCESS source=%s schemas=%s tables=%s columns=%s relations=%s indexes=%s",
-                source.source_name,
-                target_schema,
-                run.table_count,
-                run.column_count,
-                run.relation_count,
-                run.index_count,
-            )
-            session.expunge(run)
-            return run
+                writer = CatalogWriter(session)
+                writer.upsert_snapshot(
+                    source_id=source.id,
+                    run_id=run.id,
+                    snapshot=snapshot,
+                    analyzed_schemas=set(schema_list),
+                )
+
+                run.status = "SUCCESS"
+                run.finished_at = _utcnow()
+                run.table_count = len(snapshot.tables)
+                run.column_count = len(snapshot.columns)
+                run.relation_count = len(snapshot.foreign_keys)
+                run.index_count = len(snapshot.indexes)
+                run.schema_fingerprint = schema_fp
+                run.error_message = None
+                session.commit()
+                session.refresh(run)
+                logger.info(
+                    "Schema analysis SUCCESS source=%s schemas=%s tables=%s "
+                    "columns=%s relations=%s indexes=%s",
+                    source.source_name,
+                    target_schema,
+                    run.table_count,
+                    run.column_count,
+                    run.relation_count,
+                    run.index_count,
+                )
+                session.expunge(run)
+                return run
+            except Exception as exc:  # noqa: BLE001
+                session.rollback()
+                safe_msg = _safe_error_message(exc, password, settings=self.settings)
+                logger.exception("Target schema analysis FAILED: %s", safe_msg)
+                failed = self._mark_run_failed(session, run, safe_msg)
+                if failed is not None:
+                    session.expunge(failed)
+                    return failed
+                source = session.get(CatalogSource, target_id)
+                if source is not None:
+                    failed_run = CatalogAnalysisRun(
+                        source_id=source.id,
+                        status="FAILED",
+                        target_schema=target_schema,
+                        started_at=_utcnow(),
+                        finished_at=_utcnow(),
+                        error_message=safe_msg,
+                    )
+                    session.add(failed_run)
+                    session.commit()
+                    session.refresh(failed_run)
+                    session.expunge(failed_run)
+                    return failed_run
+                raise RuntimeError(safe_msg) from exc
         except LookupError:
             session.rollback()
             raise
-        except Exception as exc:  # noqa: BLE001
+        except ValueError:
             session.rollback()
-            safe_msg = _safe_error_message(exc, password, settings=self.settings)
-            logger.exception("Target schema analysis FAILED: %s", safe_msg)
-            if run is not None and run.id is not None:
-                failed = session.get(CatalogAnalysisRun, run.id)
-                if failed is not None:
-                    failed.status = "FAILED"
-                    failed.finished_at = _utcnow()
-                    failed.error_message = safe_msg
-                    session.commit()
-                    session.refresh(failed)
-                    session.expunge(failed)
-                    return failed
-            source = session.get(CatalogSource, target_id)
-            if source is not None:
-                failed_run = CatalogAnalysisRun(
-                    source_id=source.id,
-                    status="FAILED",
-                    target_schema=target_schema,
-                    started_at=_utcnow(),
-                    finished_at=_utcnow(),
-                    error_message=safe_msg,
-                )
-                session.add(failed_run)
-                session.commit()
-                session.refresh(failed_run)
-                session.expunge(failed_run)
-                return failed_run
-            raise RuntimeError(safe_msg) from exc
+            raise
+        except TargetConnectionTimeoutError:
+            raise
+        except RuntimeError:
+            # Connection-phase failures already marked FAILED above.
+            raise
         finally:
             if engine is not None:
                 engine.dispose()
