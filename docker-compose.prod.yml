@@ -47,6 +47,10 @@ services:
 
   frontend:
     ports: !reset []
+    # Inherit base volumes; ensure Evaluation Results remain visible in production
+    # (backend writes to ./backend/evaluation/results via /app/evaluation mount).
+    volumes:
+      - ./backend/evaluation/results:/app/evaluation/results:ro
     networks:
       - demis-net
       - traefik

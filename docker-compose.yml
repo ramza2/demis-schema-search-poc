@@ -117,6 +117,8 @@ services:
     container_name: demis-frontend
     volumes:
       - ./frontend/app.py:/app/app.py:ro
+      # Read Evaluation Results written by backend (./backend/evaluation:/app/evaluation)
+      - ./backend/evaluation/results:/app/evaluation/results:ro
     environment:
       # Compose service DNS (internal network)
       BACKEND_URL: http://backend:8000
