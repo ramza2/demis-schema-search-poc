@@ -12,14 +12,14 @@ def build_health_payload(settings: Settings | None = None) -> dict[str, Any]:
     cfg = settings or get_settings()
     catalog_ok = check_connection(get_catalog_engine(cfg))
     medical_required = bool(cfg.medical_db_required)
-    medical_ok = check_connection(get_medical_engine(cfg))
 
     if medical_required:
+        medical_ok = check_connection(get_medical_engine(cfg))
         medical_status = "ok" if medical_ok else "error"
         overall = "ok" if catalog_ok and medical_ok else "degraded"
     else:
-        # Production without demo profile: medical_demo is optional.
-        medical_status = "ok" if medical_ok else "disabled"
+        # Production without demo profile: do not create/probe medical_demo at all.
+        medical_status = "disabled"
         overall = "ok" if catalog_ok else "degraded"
 
     return {

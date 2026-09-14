@@ -109,8 +109,8 @@ def test_health_medical_required_failure_is_degraded() -> None:
     settings = Settings(medical_db_required=True)
     with (
         patch("app.services.health.check_connection") as mock_check,
-        patch("app.services.health.get_catalog_engine"),
-        patch("app.services.health.get_medical_engine"),
+        patch("app.services.health.get_catalog_engine") as mock_catalog_engine,
+        patch("app.services.health.get_medical_engine") as mock_medical_engine,
     ):
         mock_check.side_effect = [True, False]
         payload = build_health_payload(settings)
@@ -119,16 +119,19 @@ def test_health_medical_required_failure_is_degraded() -> None:
     assert payload["catalog_db"] == "ok"
     assert payload["medical_db"] == "error"
     assert payload["medical_db_required"] is True
+    mock_catalog_engine.assert_called_once()
+    mock_medical_engine.assert_called_once()
+    assert mock_check.call_count == 2
 
 
-def test_health_medical_optional_failure_stays_ok() -> None:
+def test_health_medical_optional_skips_medical_connection_when_catalog_ok() -> None:
     settings = Settings(medical_db_required=False)
     with (
         patch("app.services.health.check_connection") as mock_check,
-        patch("app.services.health.get_catalog_engine"),
-        patch("app.services.health.get_medical_engine"),
+        patch("app.services.health.get_catalog_engine") as mock_catalog_engine,
+        patch("app.services.health.get_medical_engine") as mock_medical_engine,
     ):
-        mock_check.side_effect = [True, False]
+        mock_check.return_value = True
         payload = build_health_payload(settings)
 
     assert payload["status"] == "ok"
@@ -136,36 +139,28 @@ def test_health_medical_optional_failure_stays_ok() -> None:
     assert payload["catalog_db"] == "ok"
     assert payload["medical_db"] == "disabled"
     assert payload["medical_db_required"] is False
+    mock_catalog_engine.assert_called_once()
+    mock_medical_engine.assert_not_called()
+    mock_check.assert_called_once()
 
 
-def test_health_medical_optional_success_reports_ok() -> None:
+def test_health_medical_optional_skips_medical_connection_when_catalog_fails() -> None:
     settings = Settings(medical_db_required=False)
     with (
         patch("app.services.health.check_connection") as mock_check,
-        patch("app.services.health.get_catalog_engine"),
-        patch("app.services.health.get_medical_engine"),
+        patch("app.services.health.get_catalog_engine") as mock_catalog_engine,
+        patch("app.services.health.get_medical_engine") as mock_medical_engine,
     ):
-        mock_check.side_effect = [True, True]
-        payload = build_health_payload(settings)
-
-    assert payload["status"] == "ok"
-    assert payload["medical_db"] == "ok"
-    assert payload["medical_db_required"] is False
-
-
-def test_health_catalog_failure_degrades_even_when_medical_optional() -> None:
-    settings = Settings(medical_db_required=False)
-    with (
-        patch("app.services.health.check_connection") as mock_check,
-        patch("app.services.health.get_catalog_engine"),
-        patch("app.services.health.get_medical_engine"),
-    ):
-        mock_check.side_effect = [False, False]
+        mock_check.return_value = False
         payload = build_health_payload(settings)
 
     assert payload["status"] == "degraded"
     assert payload["catalog_db"] == "error"
     assert payload["medical_db"] == "disabled"
+    assert payload["medical_db_required"] is False
+    mock_catalog_engine.assert_called_once()
+    mock_medical_engine.assert_not_called()
+    mock_check.assert_called_once()
 
 
 # ---------------------------------------------------------------------------
