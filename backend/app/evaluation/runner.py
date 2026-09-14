@@ -1,7 +1,9 @@
 """CLI evaluation runner for Step 5 Gold Set quantitative evaluation.
 
 Does not modify search ranking. Calls SchemaSearchService as-is.
-Official runs require EMBEDDING_PROVIDER=bge_m3.
+Official runs require a real BGE-M3 embedding provider:
+local ``bge_m3`` or remote ``openai_compatible`` (same model/dim).
+Fake provider is blocked unless ``--allow-fake`` is set for unit/dev only.
 """
 
 from __future__ import annotations
@@ -84,12 +86,16 @@ def _schema_fingerprint(session) -> str:
     except Exception as exc:  # noqa: BLE001
         return f"unavailable: {type(exc).__name__}"
 
+_OFFICIAL_EMBEDDING_PROVIDERS = frozenset({"bge_m3", "openai_compatible"})
+
+
 def assert_official_provider(settings: Settings) -> None:
     provider = (settings.embedding_provider or "").strip().lower()
-    if provider != "bge_m3":
+    if provider not in _OFFICIAL_EMBEDDING_PROVIDERS:
         raise OfficialEvaluationError(
-            f"Official evaluation requires EMBEDDING_PROVIDER=bge_m3, got {provider!r}. "
-            "Fake provider is allowed only in unit tests."
+            "Official evaluation requires EMBEDDING_PROVIDER=bge_m3 "
+            f"(local) or openai_compatible (remote), got {provider!r}. "
+            "Fake provider is allowed only with --allow-fake for unit/dev tests."
         )
 
 

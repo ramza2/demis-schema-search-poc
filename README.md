@@ -106,8 +106,14 @@ Gold 구조 예:
 
 ## 7. Runner
 
+Official Evaluation은 실제 BGE-M3 Embedding provider만 허용합니다.
+
+- Local Official: `EMBEDDING_PROVIDER=bge_m3`
+- Remote Official: `EMBEDDING_PROVIDER=openai_compatible`
+- `fake`는 Official에서 차단됩니다 (`--allow-fake`는 unit/dev only)
+
 ```bash
-# Official (BGE-M3 required)
+# Local Official (sentence-transformers BGE-M3)
 docker compose exec \
   -e EMBEDDING_PROVIDER=bge_m3 \
   -e EMBEDDING_MODEL_PATH=/models/local/bge-m3 \
@@ -116,9 +122,16 @@ docker compose exec \
   backend python -m app.evaluation.runner \
     --gold /app/evaluation/gold_schema_queries.json \
     --output /app/evaluation/results/run_manual
-```
 
-Fake Provider는 Official Evaluation에서 차단됩니다 (`--allow-fake`는 unit/dev only).
+# Remote Official (ALZI OpenAI-compatible BGE-M3 API)
+# production container가 이미 openai_compatible으로 구성되어 있으면
+# provider override 없이 그대로 실행하면 됩니다.
+docker compose exec \
+  -e PYTHONPATH=/app \
+  backend python -m app.evaluation.runner \
+    --gold /app/evaluation/gold_schema_queries.json \
+    --output /app/evaluation/results/run_manual_remote
+```
 
 본 평가 전 Warm-up Query 1회를 수행하며, Warm-up latency는 통계에서 제외합니다.
 
