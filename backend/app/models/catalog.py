@@ -95,7 +95,7 @@ class CatalogColumn(CatalogBase):
     ordinal_position: Mapped[int] = mapped_column(Integer, nullable=False)
     column_name: Mapped[str] = mapped_column(String(200), nullable=False)
     data_type: Mapped[str] = mapped_column(String(100), nullable=False)
-    character_maximum_length: Mapped[int | None] = mapped_column(Integer)
+    character_maximum_length: Mapped[int | None] = mapped_column(BigInteger)
     numeric_precision: Mapped[int | None] = mapped_column(Integer)
     numeric_scale: Mapped[int | None] = mapped_column(Integer)
     is_nullable: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)

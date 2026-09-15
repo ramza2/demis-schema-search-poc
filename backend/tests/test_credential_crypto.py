@@ -56,7 +56,9 @@ def test_wrong_key_decrypt_fails():
         decrypt_password(token, key2)
 
 
-def test_empty_password_rejected():
+def test_empty_password_round_trip():
     key = Fernet.generate_key().decode()
-    with pytest.raises(CredentialCryptoError, match="must not be empty"):
-        encrypt_password("", key)
+    token = encrypt_password("", key)
+    assert token
+    assert token.startswith("gAAAA")
+    assert decrypt_password(token, key) == ""

@@ -16,6 +16,7 @@ def ensure_catalog_schema(settings: Settings | None = None) -> None:
     engine = get_catalog_engine(cfg)
     _ensure_vector_extension(engine)
     CatalogBase.metadata.create_all(bind=engine)
+    _migrate_catalog_column_length_type(engine)
     _migrate_relation_natural_key(engine)
     _migrate_catalog_source_target_fields(engine)
     _update_step_meta(engine)
@@ -35,6 +36,34 @@ def _ensure_vector_extension(engine: Engine) -> None:
     """Activate pgvector safely on fresh and existing volumes."""
     with engine.begin() as conn:
         conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
+
+
+def _migrate_catalog_column_length_type(engine: Engine) -> None:
+    """Widen character_maximum_length for MySQL LONGTEXT/LONGBLOB metadata."""
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                """
+                DO $$
+                BEGIN
+                    IF EXISTS (
+                        SELECT 1
+                        FROM information_schema.columns
+                        WHERE table_schema = current_schema()
+                          AND table_name = 'catalog_column'
+                          AND column_name = 'character_maximum_length'
+                          AND data_type = 'integer'
+                    ) THEN
+                        ALTER TABLE catalog_column
+                            ALTER COLUMN character_maximum_length
+                            TYPE BIGINT
+                            USING character_maximum_length::BIGINT;
+                    END IF;
+                END
+                $$;
+                """
+            )
+        )
 
 
 def _migrate_catalog_source_target_fields(engine: Engine) -> None:
@@ -82,7 +111,7 @@ def _update_step_meta(engine: Engine) -> None:
                 INSERT INTO catalog_meta (meta_key, meta_value)
                 VALUES
                     ('current_step', 'Multi-DB Target Analyzer + Schema Explorer'),
-                    ('schema_version', '0.6.0')
+                    ('schema_version', '0.6.1')
                 ON CONFLICT (meta_key) DO UPDATE
                 SET meta_value = EXCLUDED.meta_value,
                     updated_at = CURRENT_TIMESTAMP

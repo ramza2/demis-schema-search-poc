@@ -34,8 +34,9 @@ def validate_encryption_key(encryption_key: str | None) -> None:
 
 
 def encrypt_password(plaintext: str, encryption_key: str | None) -> str:
-    if plaintext is None or plaintext == "":
-        raise CredentialCryptoError("password must not be empty")
+    """Encrypt a Target password; the empty string is a valid passwordless credential."""
+    if plaintext is None:
+        raise CredentialCryptoError("password must not be None")
     token = _fernet(encryption_key).encrypt(plaintext.encode("utf-8"))
     return token.decode("utf-8")
 

@@ -185,7 +185,7 @@ def probe_connection(engine: Engine, db_type: str) -> dict[str, Any]:
             row = conn.execute(
                 text(
                     "SELECT VERSION() AS version, DATABASE() AS database_name, "
-                    "CURRENT_USER() AS current_user"
+                    "CURRENT_USER() AS authenticated_user"
                 )
             ).mappings().one()
             product = "MariaDB" if db_type == "mariadb" or "mariadb" in str(row["version"]).lower() else "MySQL"
@@ -194,7 +194,7 @@ def probe_connection(engine: Engine, db_type: str) -> dict[str, Any]:
                 "dbms_product": product,
                 "db_version": str(row["version"]),
                 "database_or_service": str(row["database_name"] or ""),
-                "current_user": str(row["current_user"]),
+                "current_user": str(row["authenticated_user"]),
             }
         # Oracle: basic connectivity via dual/sys_context (no V$ privilege required).
         user_row = conn.execute(text("SELECT USER AS current_user FROM dual")).mappings().one()
