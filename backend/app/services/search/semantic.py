@@ -40,7 +40,7 @@ def semantic_search(
     import time
 
     t0 = time.perf_counter()
-    vectors = provider.embed_texts([query_text])
+    vectors = provider.embed_queries([query_text])
     query_embedding_ms = (time.perf_counter() - t0) * 1000.0
     if not vectors or not vectors[0]:
         return [], query_embedding_ms, 0.0

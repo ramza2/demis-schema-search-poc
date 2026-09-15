@@ -86,7 +86,7 @@ def _schema_fingerprint(session) -> str:
     except Exception as exc:  # noqa: BLE001
         return f"unavailable: {type(exc).__name__}"
 
-_OFFICIAL_EMBEDDING_PROVIDERS = frozenset({"bge_m3", "openai_compatible"})
+_OFFICIAL_EMBEDDING_PROVIDERS = frozenset({"bge_m3", "openai_compatible", "koe5"})
 
 
 def assert_official_provider(settings: Settings) -> None:
@@ -94,7 +94,8 @@ def assert_official_provider(settings: Settings) -> None:
     if provider not in _OFFICIAL_EMBEDDING_PROVIDERS:
         raise OfficialEvaluationError(
             "Official evaluation requires EMBEDDING_PROVIDER=bge_m3 "
-            f"(local) or openai_compatible (remote), got {provider!r}. "
+            "(local), openai_compatible (remote), or koe5 (local/offline), "
+            f"got {provider!r}. "
             "Fake provider is allowed only with --allow-fake for unit/dev tests."
         )
 
@@ -281,6 +282,16 @@ def run_evaluation(
             "normalize": settings.embedding_normalize,
             "max_seq_length": settings.embedding_max_seq_length,
             "embedding_provider": settings.embedding_provider,
+            "query_prefix": (
+                "query: "
+                if (settings.embedding_provider or "").strip().lower() == "koe5"
+                else None
+            ),
+            "document_prefix": (
+                "passage: "
+                if (settings.embedding_provider or "").strip().lower() == "koe5"
+                else None
+            ),
             "rrf_k": settings.search_rrf_k,
             "candidate_multiplier": settings.search_candidate_multiplier,
             "candidate_min": settings.search_candidate_min,

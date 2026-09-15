@@ -59,7 +59,24 @@ def get_embedding_provider(settings: Settings | None = None) -> EmbeddingProvide
             model_key=cfg.build_model_key(),
         )
 
+    if provider == "koe5":
+        from app.embeddings.koe5 import Koe5EmbeddingProvider
+
+        return Koe5EmbeddingProvider(
+            model_name=cfg.embedding_model_name,
+            model_path=cfg.embedding_model_path,
+            model_revision=cfg.embedding_model_revision,
+            device=cfg.embedding_device,
+            dimension=cfg.embedding_dimension,
+            batch_size=cfg.embedding_batch_size,
+            max_seq_length=cfg.embedding_max_seq_length,
+            normalize=cfg.embedding_normalize,
+            num_threads=cfg.embedding_num_threads,
+            hf_hub_offline=cfg.hf_hub_offline,
+            model_key=cfg.build_model_key(),
+        )
+
     raise ConfigurationError(
         f"Unknown EMBEDDING_PROVIDER={provider!r}. "
-        "Supported values: fake, bge_m3, openai_compatible"
+        "Supported values: fake, bge_m3, openai_compatible, koe5"
     )

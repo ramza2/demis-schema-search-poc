@@ -62,9 +62,10 @@ services:
       CATALOG_DB_USER: ${CATALOG_DB_USER:-catalog_user}
       CATALOG_DB_PASSWORD: ${CATALOG_DB_PASSWORD:-catalog_pass_change_me}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
-      # Embedding (Step 3). Default fake for fast/CI; set bge_m3 or openai_compatible.
+      # Embedding (Step 3). Default fake for fast/CI; set bge_m3, openai_compatible, or koe5.
       EMBEDDING_PROVIDER: ${EMBEDDING_PROVIDER:-fake}
       EMBEDDING_MODEL_NAME: ${EMBEDDING_MODEL_NAME:-BAAI/bge-m3}
+      # For koe5 offline: EMBEDDING_MODEL_PATH=/models/local/koe5 and HF_HUB_OFFLINE=true
       EMBEDDING_MODEL_PATH: ${EMBEDDING_MODEL_PATH:-}
       EMBEDDING_DEVICE: ${EMBEDDING_DEVICE:-cpu}
       EMBEDDING_DIMENSION: ${EMBEDDING_DIMENSION:-1024}

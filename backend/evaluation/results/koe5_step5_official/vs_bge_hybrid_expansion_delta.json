@@ -1,0 +1,107 @@
+{
+  "experiment": "hybrid_expansion",
+  "koe5_run": "koe5_step5_official",
+  "bge_baseline_run": "bge_step5_official",
+  "metrics": {
+    "top1_primary_accuracy": {
+      "koe5": 0.7555555555555555,
+      "bge": 0.7777777777777778,
+      "delta": -0.022222222222222254
+    },
+    "hit_rate_at_3": {
+      "koe5": 0.9555555555555556,
+      "bge": 0.9333333333333333,
+      "delta": 0.022222222222222254
+    },
+    "hit_rate_at_5": {
+      "koe5": 0.9555555555555556,
+      "bge": 0.9333333333333333,
+      "delta": 0.022222222222222254
+    },
+    "mean_recall_at_3": {
+      "koe5": 0.7896296296296296,
+      "bge": 0.7637037037037037,
+      "delta": 0.025925925925925908
+    },
+    "mean_recall_at_5": {
+      "koe5": 0.8007407407407408,
+      "bge": 0.7748148148148148,
+      "delta": 0.025925925925925908
+    },
+    "mrr": {
+      "koe5": 0.8346296296296296,
+      "bge": 0.8287037037037036,
+      "delta": 0.005925925925926001
+    },
+    "primary_mrr": {
+      "koe5": 0.8087037037037037,
+      "bge": 0.8175925925925925,
+      "delta": -0.008888888888888835
+    },
+    "column_hit_at_3": {
+      "koe5": 0.7714285714285715,
+      "bge": 0.7142857142857143,
+      "delta": 0.05714285714285716
+    },
+    "column_hit_at_5": {
+      "koe5": 0.8571428571428571,
+      "bge": 0.7142857142857143,
+      "delta": 0.1428571428571428
+    },
+    "column_mean_recall_at_3": {
+      "koe5": 0.51,
+      "bge": 0.4538095238095238,
+      "delta": 0.056190476190476235
+    },
+    "column_mean_recall_at_5": {
+      "koe5": 0.6333333333333334,
+      "bge": 0.5190476190476191,
+      "delta": 0.11428571428571432
+    },
+    "column_mrr": {
+      "koe5": 0.46149659863945575,
+      "bge": 0.38803854875283444,
+      "delta": 0.0734580498866213
+    },
+    "relation_hit_rate": {
+      "koe5": 0.0,
+      "bge": 0.0,
+      "delta": 0.0
+    },
+    "relation_recall": {
+      "koe5": 0.0,
+      "bge": 0.0,
+      "delta": 0.0
+    },
+    "avg_total_ms": {
+      "koe5": 81.78851408964773,
+      "bge": 82.59989242239196,
+      "delta": -0.8113783327442263
+    },
+    "median_total_ms": {
+      "koe5": 81.9820990000153,
+      "bge": 75.62619999953313,
+      "delta": 6.355899000482168
+    },
+    "p95_total_ms": {
+      "koe5": 112.09637999854749,
+      "bge": 124.0439810026146,
+      "delta": -11.94760100406711
+    }
+  },
+  "notes": [
+    "Relation recall for hybrid_expansion is N/A (relation expansion off), not a performance score of 0.0.",
+    "Relation recall for hybrid_expansion_relation is evaluated separately.",
+    "No Gold/Ranking/Terminology retuning; numbers kept as measured."
+  ],
+  "hybrid_expansion_relation": {
+    "relation_recall": {
+      "koe5": 1.0,
+      "bge": 1.0
+    },
+    "relation_hit_rate": {
+      "koe5": 1.0,
+      "bge": 1.0
+    }
+  }
+}
