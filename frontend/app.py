@@ -16,7 +16,7 @@ st.set_page_config(
 )
 
 st.title("DEMIS Schema Semantic Search PoC")
-st.subheader("현재 Step: Step 4 - Semantic/Keyword Hybrid Search + Terminology + FK Expansion")
+st.subheader("현재 Step: Step 4.1 - Search Evaluation Readiness")
 st.write(
     "자연어로 Schema(Table/Column)를 탐색합니다. "
     "생성형 LLM 및 자연어→SQL 생성은 포함하지 않습니다."
@@ -119,12 +119,17 @@ if st.button("Search", type="primary"):
 
                     st.markdown("#### Direct Search Results")
                     for row in data.get("direct_results") or []:
-                        title = f"#{row.get('rank')} [{row.get('object_type')}] {row.get('table_name')}"
+                        schema = row.get("schema_name") or "public"
+                        title = (
+                            f"#{row.get('rank')} [{row.get('object_type')}] "
+                            f"{schema}.{row.get('table_name')}"
+                        )
                         if row.get("column_name"):
                             title += f".{row.get('column_name')}"
                         with st.expander(title, expanded=row.get("rank") == 1):
                             st.write(
                                 {
+                                    "schema_name": row.get("schema_name"),
                                     "document_key": row.get("document_key"),
                                     "semantic_score": row.get("semantic_score"),
                                     "semantic_rank": row.get("semantic_rank"),
@@ -141,12 +146,17 @@ if st.button("Search", type="primary"):
                     if not related:
                         st.write("(none)")
                     for rel in related:
+                        seed = f"{rel.get('seed_schema')}.{rel.get('seed_table')}"
+                        target = f"{rel.get('schema_name')}.{rel.get('table_name')}"
                         path = " → ".join(
-                            [rel.get("seed_table")]
-                            + [h.get("to_table") for h in rel.get("relation_path") or []]
+                            [seed]
+                            + [
+                                f"{h.get('to_schema')}.{h.get('to_table')}"
+                                for h in rel.get("relation_path") or []
+                            ]
                         )
                         st.write(
-                            f"- **{rel.get('table_name')}** (seed={rel.get('seed_table')}, "
+                            f"- **{target}** (seed={seed}, "
                             f"hop={rel.get('hop_distance')}) path: `{path}`"
                         )
             except Exception as exc:  # noqa: BLE001

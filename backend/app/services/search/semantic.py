@@ -16,6 +16,7 @@ class SemanticHit:
     document_id: int
     document_key: str
     object_type: str
+    schema_name: str | None
     table_name: str | None
     column_name: str | None
     searchable_text: str
@@ -30,15 +31,18 @@ def semantic_search(
     query_text: str,
     limit: int,
     object_type: str | None = None,
-) -> tuple[list[SemanticHit], float]:
-    """Exact cosine search. Score = 1 - cosine_distance."""
+) -> tuple[list[SemanticHit], float, float]:
+    """Exact cosine search. Score = 1 - cosine_distance.
+
+    Returns (hits, query_embedding_ms, semantic_search_ms).
+    """
     import time
 
     t0 = time.perf_counter()
     vectors = provider.embed_texts([query_text])
     query_embedding_ms = (time.perf_counter() - t0) * 1000.0
     if not vectors or not vectors[0]:
-        return [], query_embedding_ms
+        return [], query_embedding_ms, 0.0
 
     qvec = vectors[0]
     model_key = provider.model_key
@@ -56,6 +60,7 @@ def semantic_search(
             d.document_key,
             d.object_type,
             d.searchable_text,
+            t.schema_name,
             t.table_name,
             c.column_name,
             (e.embedding <=> CAST(:qvec AS vector)) AS distance
@@ -69,7 +74,9 @@ def semantic_search(
         ORDER BY e.embedding <=> CAST(:qvec AS vector)
         LIMIT :limit
     """
+    t_search = time.perf_counter()
     rows = session.execute(text(sql), params).mappings().all()
+    semantic_search_ms = (time.perf_counter() - t_search) * 1000.0
     hits: list[SemanticHit] = []
     for i, row in enumerate(rows, start=1):
         distance = float(row["distance"])
@@ -78,6 +85,7 @@ def semantic_search(
                 document_id=int(row["document_id"]),
                 document_key=row["document_key"],
                 object_type=row["object_type"],
+                schema_name=row["schema_name"],
                 table_name=row["table_name"],
                 column_name=row["column_name"],
                 searchable_text=row["searchable_text"] or "",
@@ -85,7 +93,7 @@ def semantic_search(
                 semantic_rank=i,
             )
         )
-    return hits, query_embedding_ms
+    return hits, query_embedding_ms, semantic_search_ms
 
 
 def embedding_count(session: Session, model_key: str) -> int:

@@ -1,4 +1,4 @@
-"""Orchestrate Semantic / Keyword / Hybrid schema search (Step 4)."""
+"""Orchestrate Semantic / Keyword / Hybrid schema search (Step 4 / 4.1)."""
 
 from __future__ import annotations
 
@@ -12,7 +12,7 @@ from app.embeddings.base import EmbeddingProvider
 from app.embeddings.factory import get_embedding_provider
 from app.services.search.keyword import keyword_search, tokenize
 from app.services.search.query_normalizer import normalize_query
-from app.services.search.relation_expander import RelatedTableHit, expand_relations
+from app.services.search.relation_expander import RelatedTableHit, TableKey, expand_relations
 from app.services.search.rrf import rrf_fuse
 from app.services.search.semantic import embedding_count, semantic_search
 from app.services.search.terminology import expand_query
@@ -29,6 +29,7 @@ class DirectResult:
     rank: int
     match_type: str
     object_type: str
+    schema_name: str | None
     table_name: str | None
     column_name: str | None
     document_key: str
@@ -136,7 +137,7 @@ class SchemaSearchService:
                     "Run POST /api/v1/embeddings/run first.",
                 )
             semantic_query = expansion.expanded_query if expand_terms else norm.normalized
-            semantic_hits, q_ms = semantic_search(
+            semantic_hits, q_ms, sem_ms = semantic_search(
                 self.session,
                 provider=provider,
                 query_text=semantic_query,
@@ -144,6 +145,7 @@ class SchemaSearchService:
                 object_type=obj_filter,
             )
             timings["query_embedding_ms"] = q_ms
+            timings["semantic_search_ms"] = sem_ms
 
         if mode_l in {"keyword", "hybrid"}:
             original_terms = tokenize(norm.normalized)
@@ -167,6 +169,7 @@ class SchemaSearchService:
                         rank=hit.semantic_rank,
                         match_type="DIRECT",
                         object_type=hit.object_type,
+                        schema_name=hit.schema_name,
                         table_name=hit.table_name,
                         column_name=hit.column_name,
                         document_key=hit.document_key,
@@ -184,6 +187,7 @@ class SchemaSearchService:
                         rank=hit.keyword_rank,
                         match_type="DIRECT",
                         object_type=hit.object_type,
+                        schema_name=hit.schema_name,
                         table_name=hit.table_name,
                         column_name=hit.column_name,
                         document_key=hit.document_key,
@@ -215,6 +219,7 @@ class SchemaSearchService:
                         rank=hit.final_rank or 0,
                         match_type="DIRECT",
                         object_type=src.object_type,
+                        schema_name=getattr(src, "schema_name", None),
                         table_name=src.table_name,
                         column_name=src.column_name,
                         document_key=src.document_key,
@@ -232,17 +237,27 @@ class SchemaSearchService:
         related: list[RelatedTableHit] = []
         if expand_relations_enabled and max_relation_hops > 0:
             t_rel = time.perf_counter()
-            seeds: list[str] = []
+            seeds: list[TableKey] = []
+            seen: set[TableKey] = set()
             for item in direct:
-                if item.table_name and item.table_name not in seeds:
-                    seeds.append(item.table_name)
+                if not item.table_name:
+                    continue
+                key = (item.schema_name or "public", item.table_name)
+                if key in seen:
+                    continue
+                seen.add(key)
+                seeds.append(key)
             related = expand_relations(
                 self.session,
-                seed_table_names=seeds[:20],
+                seed_tables=seeds[:20],
                 max_hops=max_relation_hops,
             )
-            direct_tables = {d.table_name for d in direct if d.object_type == "TABLE"}
-            related = [r for r in related if r.table_name not in direct_tables]
+            direct_keys = {
+                (d.schema_name or "public", d.table_name)
+                for d in direct
+                if d.object_type == "TABLE" and d.table_name
+            }
+            related = [r for r in related if (r.schema_name, r.table_name) not in direct_keys]
             timings["relation_expansion_ms"] = (time.perf_counter() - t_rel) * 1000.0
 
         elapsed_ms = (time.perf_counter() - t_total) * 1000.0

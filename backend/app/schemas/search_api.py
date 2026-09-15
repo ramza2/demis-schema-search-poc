@@ -1,4 +1,4 @@
-"""Search API request/response schemas (Step 4)."""
+"""Search API request/response schemas (Step 4 / 4.1)."""
 
 from __future__ import annotations
 
@@ -27,7 +27,9 @@ class QueryInfo(BaseModel):
 
 
 class RelationHopOut(BaseModel):
+    from_schema: str
     from_table: str
+    to_schema: str
     to_table: str
     constraint_name: str
     direction: str
@@ -39,6 +41,7 @@ class DirectResultOut(BaseModel):
     rank: int
     match_type: str = "DIRECT"
     object_type: str
+    schema_name: str | None = None
     table_name: str | None = None
     column_name: str | None = None
     document_key: str
@@ -55,6 +58,7 @@ class DirectResultOut(BaseModel):
 class RelatedTableOut(BaseModel):
     table_name: str
     schema_name: str
+    seed_schema: str
     seed_table: str
     hop_distance: int
     match_type: str = "RELATED"
