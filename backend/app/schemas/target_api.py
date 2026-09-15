@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from app.db.target_connection import validate_target_host
 from app.schemas.schema_api import AnalyzeResponse
@@ -19,6 +19,8 @@ class TargetCreate(BaseModel):
     database_name: str = Field(min_length=1, max_length=100)
     default_schema: str = Field(default="public", min_length=1, max_length=100)
     username: str = Field(min_length=1, max_length=255)
+    # Plaintext only in request; stored as encrypted_password.
+    password: str = Field(min_length=1)
     connection_options: dict[str, Any] | None = None
     enabled: bool = True
 
@@ -36,6 +38,9 @@ class TargetUpdate(BaseModel):
     database_name: str | None = Field(default=None, min_length=1, max_length=100)
     default_schema: str | None = Field(default=None, min_length=1, max_length=100)
     username: str | None = Field(default=None, min_length=1, max_length=255)
+    # Omit / null → keep existing credential. Non-empty → replace.
+    password: str | None = Field(default=None, min_length=1)
+    clear_saved_password: bool = False
     connection_options: dict[str, Any] | None = None
     enabled: bool | None = None
 
@@ -45,6 +50,13 @@ class TargetUpdate(BaseModel):
         if value is None:
             return None
         return validate_target_host(value)
+
+    @model_validator(mode="after")
+    def _password_vs_clear(self) -> TargetUpdate:
+        if self.clear_saved_password and self.password:
+            raise ValueError("password and clear_saved_password cannot both be set")
+        return self
+
 
 class TargetOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
@@ -59,16 +71,19 @@ class TargetOut(BaseModel):
     username: str | None = None
     connection_options: dict[str, Any] | None = None
     enabled: bool
+    has_saved_password: bool = False
     created_at: datetime | None = None
     updated_at: datetime | None = None
 
 
 class PasswordRequest(BaseModel):
-    password: str = Field(min_length=1)
+    """Optional password for Test/Discover. Uses saved credential when omitted."""
+
+    password: str | None = Field(default=None, min_length=1)
 
 
 class AnalyzeRequest(BaseModel):
-    password: str = Field(min_length=1)
+    password: str | None = Field(default=None, min_length=1)
     schemas: list[str] = Field(min_length=1)
 
 
@@ -84,7 +99,6 @@ class SchemaListResponse(BaseModel):
     schemas: list[str]
 
 
-# Reuse AnalyzeResponse shape for target analyze results.
 TargetAnalyzeResponse = AnalyzeResponse
 
 

@@ -10,6 +10,7 @@ from unittest.mock import MagicMock
 
 import oracledb
 import pytest
+from cryptography.fernet import Fernet
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, text
 
@@ -105,6 +106,8 @@ def client():
     os.environ.setdefault("CATALOG_DB_HOST", os.getenv("CATALOG_DB_HOST", "localhost"))
     os.environ.setdefault("CATALOG_DB_PORT", os.getenv("CATALOG_DB_PORT", "5434"))
     os.environ["TARGET_DB_CONNECT_TIMEOUT_SECONDS"] = "2"
+    if not os.environ.get("TARGET_CREDENTIAL_ENCRYPTION_KEY"):
+        os.environ["TARGET_CREDENTIAL_ENCRYPTION_KEY"] = Fernet.generate_key().decode()
 
     from app.core.config import get_settings
     from app.db import session as session_mod
@@ -252,6 +255,7 @@ def test_create_target_rejects_http_host(client: TestClient):
             "database_name": "demo",
             "default_schema": "public",
             "username": "u",
+            "password": "test-password",
             "enabled": True,
         },
     )
@@ -270,6 +274,7 @@ def test_create_target_rejects_scheme_host(client: TestClient):
             "database_name": "demo",
             "default_schema": "public",
             "username": "u",
+            "password": "test-password",
             "enabled": True,
         },
     )
@@ -289,6 +294,7 @@ def test_update_target_rejects_https_host(client: TestClient):
             "database_name": "demo",
             "default_schema": "public",
             "username": "u",
+            "password": "test-password",
             "enabled": True,
         },
     )
@@ -325,6 +331,7 @@ def test_test_connection_unreachable_host_bounded_timeout(client: TestClient):
             "database_name": "demo",
             "default_schema": "public",
             "username": "u",
+            "password": "test-password",
             "enabled": True,
         },
     )
@@ -361,6 +368,7 @@ def _create_local_target(client: TestClient, name: str | None = None) -> int:
             "database_name": "demo",
             "default_schema": "public",
             "username": "u",
+            "password": "test-password",
             "enabled": True,
         },
     )

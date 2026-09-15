@@ -11,6 +11,7 @@ from helpers import (
     LOAD_TARGETS_TIMEOUT_SECONDS,
     TEST_CONNECTION_TIMEOUT_SECONDS,
     TIMEOUT_USER_MESSAGE,
+    credential_status_label,
     format_connection_request_error,
     tabs_created_before_targets_load,
 )
@@ -35,10 +36,19 @@ def test_host_hint_present():
     assert "hostname" in HOST_INPUT_HINT.lower() or "IP" in HOST_INPUT_HINT
 
 
+def test_credential_status_label():
+    assert credential_status_label(True) == "Saved"
+    assert credential_status_label(False) == "Not saved"
+
+
 def test_app_tabs_before_load_targets():
     source = (FRONTEND_DIR / "app.py").read_text(encoding="utf-8")
     assert tabs_created_before_targets_load(source)
     assert "HOST_INPUT_HINT" in source
     assert "TEST_CONNECTION_TIMEOUT_SECONDS" in source
     assert "format_connection_request_error" in source
+    assert "credential_status_label" in source
+    assert "Edit Target" in source
+    assert "Delete Target" in source
+    assert "has_saved_password" in source
     assert "Targets" in source and "Evaluation Results" in source and "st.tabs(" in source

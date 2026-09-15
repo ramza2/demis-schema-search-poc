@@ -15,6 +15,7 @@ from helpers import (
     HOST_INPUT_HINT,
     LOAD_TARGETS_TIMEOUT_SECONDS,
     TEST_CONNECTION_TIMEOUT_SECONDS,
+    credential_status_label,
     format_connection_request_error,
 )
 
@@ -39,6 +40,14 @@ def api_get(path: str, **kwargs: Any) -> requests.Response:
 
 def api_post(path: str, **kwargs: Any) -> requests.Response:
     return requests.post(f"{BACKEND_URL}{path}", timeout=kwargs.pop("timeout", 120), **kwargs)
+
+
+def api_put(path: str, **kwargs: Any) -> requests.Response:
+    return requests.put(f"{BACKEND_URL}{path}", timeout=kwargs.pop("timeout", 120), **kwargs)
+
+
+def api_delete(path: str, **kwargs: Any) -> requests.Response:
+    return requests.delete(f"{BACKEND_URL}{path}", timeout=kwargs.pop("timeout", 120), **kwargs)
 
 
 def load_targets() -> tuple[list[dict[str, Any]], str | None]:
@@ -169,6 +178,7 @@ with tab_targets:
                 "Database": t.get("database_name"),
                 "Default Schema": t.get("default_schema"),
                 "Username": t.get("username"),
+                "Credential": credential_status_label(bool(t.get("has_saved_password"))),
                 "Enabled": t.get("enabled"),
             }
             for t in targets
@@ -178,7 +188,6 @@ with tab_targets:
         st.write("(등록된 Target 없음)")
 
     st.markdown("### Target 추가")
-    # db_type / port outside form so defaults re-render when type changes.
     db_type = st.selectbox(
         "DB Type",
         ["postgresql", "mysql", "mariadb", "oracle"],
@@ -196,6 +205,8 @@ with tab_targets:
         host = st.text_input("Host", value="localhost")
         st.caption(HOST_INPUT_HINT)
         username = st.text_input("Username")
+        password = st.text_input("Password", type="password")
+        st.caption("Password는 Catalog DB에 암호화되어 저장됩니다. 평문으로는 저장/표시되지 않습니다.")
 
         database_name = ""
         default_schema = "public"
@@ -232,6 +243,8 @@ with tab_targets:
                 missing.append("default_schema")
             if not username.strip():
                 missing.append("username")
+            if not password:
+                missing.append("password")
             if missing:
                 st.error(f"필수 항목 누락: {', '.join(missing)}")
             else:
@@ -243,6 +256,7 @@ with tab_targets:
                     "database_name": str(database_name).strip(),
                     "default_schema": str(default_schema).strip(),
                     "username": username.strip(),
+                    "password": password,
                     "connection_options": connection_options,
                     "enabled": enabled,
                 }
@@ -250,7 +264,7 @@ with tab_targets:
                     create_resp = api_post("/api/v1/targets", json=payload, timeout=30)
                     show_response(create_resp)
                     if create_resp.ok:
-                        st.info("Target이 추가되었습니다. 페이지를 새로고침하면 목록에 반영됩니다.")
+                        st.rerun()
                 except Exception as exc:  # noqa: BLE001
                     st.error(f"Target 생성 실패: {exc}")
 
@@ -258,22 +272,118 @@ with tab_targets:
     selected = target_selector(targets, key="targets_action_select")
     if selected:
         st.caption(f"id={selected['id']} · {target_label(selected)}")
-        password = st.text_input(
-            "Password (제출 후 표시되지 않음)",
-            type="password",
-            key="target_action_password",
+        has_saved = bool(selected.get("has_saved_password"))
+        st.info(
+            f"Credential: **{credential_status_label(has_saved)}**"
+            + (" — Test / Discover / Analyze 시 저장된 비밀번호를 사용합니다." if has_saved else "")
         )
+        temp_password = ""
+        if not has_saved:
+            st.warning("저장된 Credential이 없습니다. 아래에서 임시 Password를 입력하거나 Edit Target에서 등록하세요.")
+            temp_password = st.text_input(
+                "임시 Password (이 요청에만 사용, 저장되지 않음)",
+                type="password",
+                key="target_action_temp_password",
+            )
+
+        with st.expander("Edit Target", expanded=False):
+            edit_db_type = st.selectbox(
+                "DB Type",
+                ["postgresql", "mysql", "mariadb", "oracle"],
+                index=["postgresql", "mysql", "mariadb", "oracle"].index(
+                    selected.get("db_type") or "postgresql"
+                ),
+                key=f"edit_db_type_{selected['id']}",
+            )
+            with st.form(f"edit_target_form_{selected['id']}"):
+                edit_name = st.text_input("Source Name", value=selected.get("source_name") or "")
+                edit_host = st.text_input("Host", value=selected.get("host") or "")
+                st.caption(HOST_INPUT_HINT)
+                edit_port = st.number_input(
+                    "Port",
+                    min_value=1,
+                    max_value=65535,
+                    value=int(selected.get("port") or DEFAULT_PORTS.get(edit_db_type, 5432)),
+                )
+                edit_username = st.text_input("Username", value=selected.get("username") or "")
+                edit_database = st.text_input(
+                    "Database / Service Name",
+                    value=selected.get("database_name") or "",
+                )
+                edit_schema = st.text_input(
+                    "Default Schema / Owner",
+                    value=selected.get("default_schema") or "",
+                )
+                st.caption(
+                    f"Saved credential: {'있음' if has_saved else '없음'} — "
+                    "새 Password를 입력하면 기존 Credential을 교체합니다. 비워두면 유지합니다."
+                )
+                edit_password = st.text_input(
+                    "Password (새 비밀번호 입력 시 기존 credential 교체)",
+                    type="password",
+                    key=f"edit_password_{selected['id']}",
+                )
+                clear_saved = st.checkbox(
+                    "저장된 Credential 삭제",
+                    value=False,
+                    key=f"edit_clear_cred_{selected['id']}",
+                )
+                edit_enabled = st.checkbox(
+                    "Enabled",
+                    value=bool(selected.get("enabled", True)),
+                    key=f"edit_enabled_{selected['id']}",
+                )
+                save_edit = st.form_submit_button("Save Target", type="primary")
+                if save_edit:
+                    update_payload: dict[str, Any] = {
+                        "source_name": edit_name.strip(),
+                        "db_type": edit_db_type,
+                        "host": edit_host.strip(),
+                        "port": int(edit_port),
+                        "database_name": edit_database.strip(),
+                        "default_schema": edit_schema.strip() or "public",
+                        "username": edit_username.strip(),
+                        "enabled": edit_enabled,
+                        "clear_saved_password": clear_saved,
+                    }
+                    if edit_db_type == "oracle":
+                        update_payload["connection_options"] = (
+                            {"service_name": edit_database.strip()}
+                            if edit_database.strip()
+                            else None
+                        )
+                    if edit_password and not clear_saved:
+                        update_payload["password"] = edit_password
+                    try:
+                        upd = api_put(
+                            f"/api/v1/targets/{selected['id']}",
+                            json=update_payload,
+                            timeout=30,
+                        )
+                        show_response(upd)
+                        if upd.ok:
+                            st.rerun()
+                    except Exception as exc:  # noqa: BLE001
+                        st.error(f"Target 수정 실패: {exc}")
+
+        def _action_password_payload() -> dict[str, str] | None:
+            if has_saved:
+                return {}
+            if temp_password:
+                return {"password": temp_password}
+            return None
 
         b1, b2 = st.columns(2)
         with b1:
             if st.button("Test Connection", key="btn_test_conn"):
-                if not password:
-                    st.error("Password가 필요합니다.")
+                body = _action_password_payload()
+                if body is None:
+                    st.error("저장된 Credential이 없습니다. 임시 Password를 입력하세요.")
                 else:
                     try:
                         r = api_post(
                             f"/api/v1/targets/{selected['id']}/test",
-                            json={"password": password},
+                            json=body,
                             timeout=TEST_CONNECTION_TIMEOUT_SECONDS,
                         )
                         show_response(r)
@@ -281,13 +391,14 @@ with tab_targets:
                         st.error(format_connection_request_error(exc))
         with b2:
             if st.button("Discover Schemas", key="btn_discover"):
-                if not password:
-                    st.error("Password가 필요합니다.")
+                body = _action_password_payload()
+                if body is None:
+                    st.error("저장된 Credential이 없습니다. 임시 Password를 입력하세요.")
                 else:
                     try:
                         r = api_post(
                             f"/api/v1/targets/{selected['id']}/schemas",
-                            json={"password": password},
+                            json=body,
                             timeout=DISCOVER_SCHEMAS_TIMEOUT_SECONDS,
                         )
                         show_response(r)
@@ -309,15 +420,19 @@ with tab_targets:
             key=f"analyze_schemas_{selected['id']}",
         )
         if st.button("Analyze", type="primary", key="btn_analyze"):
-            if not password:
-                st.error("Password가 필요합니다.")
+            body = _action_password_payload()
+            if body is None:
+                st.error("저장된 Credential이 없습니다. 임시 Password를 입력하세요.")
             elif not chosen_schemas:
                 st.error("분석할 Schema를 선택하세요.")
             else:
                 try:
+                    payload = {"schemas": chosen_schemas}
+                    if body.get("password"):
+                        payload["password"] = body["password"]
                     r = api_post(
                         f"/api/v1/targets/{selected['id']}/analyze",
-                        json={"password": password, "schemas": chosen_schemas},
+                        json=payload,
                         timeout=600,
                     )
                     show_response(r)
@@ -347,6 +462,25 @@ with tab_targets:
                     show_response(r)
                 except Exception as exc:  # noqa: BLE001
                     st.error(f"Embedding Run 실패: {exc}")
+
+        st.markdown("#### Delete Target")
+        st.warning("삭제하면 이 Target의 Catalog / Search Document / Embedding 데이터가 함께 제거됩니다.")
+        confirm_name = st.text_input(
+            "삭제 확인: Source Name을 다시 입력하세요",
+            key=f"delete_confirm_{selected['id']}",
+        )
+        if st.button("Delete Target", type="secondary", key="btn_delete_target"):
+            if confirm_name.strip() != (selected.get("source_name") or ""):
+                st.error("Source Name이 일치하지 않습니다. 삭제가 취소되었습니다.")
+            else:
+                try:
+                    r = api_delete(f"/api/v1/targets/{selected['id']}", timeout=60)
+                    if r.status_code == 204:
+                        st.rerun()
+                    else:
+                        show_response(r)
+                except Exception as exc:  # noqa: BLE001
+                    st.error(f"Target 삭제 실패: {exc}")
 
     st.markdown("### medical_demo Analyze Shortcut")
     st.caption("기본 medical_demo 소스에 대해 POST /api/v1/schema/analyze 를 호출합니다.")

@@ -56,6 +56,22 @@ def _migrate_catalog_source_target_fields(engine: Engine) -> None:
                 """
             )
         )
+        conn.execute(
+            text(
+                """
+                ALTER TABLE IF EXISTS catalog_source
+                    ADD COLUMN IF NOT EXISTS encrypted_password TEXT
+                """
+            )
+        )
+        conn.execute(
+            text(
+                """
+                COMMENT ON COLUMN catalog_source.encrypted_password IS
+                  'Fernet ciphertext for Target DB password; plaintext is never stored'
+                """
+            )
+        )
 
 
 def _update_step_meta(engine: Engine) -> None:

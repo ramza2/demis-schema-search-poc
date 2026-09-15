@@ -6,7 +6,7 @@ import logging
 from datetime import datetime, timezone
 from typing import Any
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -33,6 +33,11 @@ from app.models.catalog import (
     CatalogTable,
 )
 from app.schemas.target_api import TargetCreate, TargetUpdate
+from app.security.credential_crypto import (
+    CredentialCryptoError,
+    decrypt_password,
+    encrypt_password,
+)
 from app.services.catalog_writer import CatalogWriter, schema_snapshot_fingerprint
 
 logger = logging.getLogger(__name__)
@@ -87,6 +92,37 @@ class TargetService:
             ) from None
         raise RuntimeError(safe) from None
 
+
+    def _encryption_key(self) -> str | None:
+        return self.settings.target_credential_encryption_key
+
+    def _encrypt_password(self, password: str) -> str:
+        try:
+            return encrypt_password(password, self._encryption_key())
+        except CredentialCryptoError as exc:
+            raise ValueError(str(exc)) from exc
+
+    def _decrypt_password(self, ciphertext: str) -> str:
+        try:
+            return decrypt_password(ciphertext, self._encryption_key())
+        except CredentialCryptoError as exc:
+            raise ValueError(str(exc)) from exc
+
+    def resolve_password(
+        self,
+        source: CatalogSource,
+        request_password: str | None,
+    ) -> str:
+        """Prefer request password; otherwise decrypt saved credential."""
+        if request_password:
+            return request_password
+        if source.encrypted_password:
+            return self._decrypt_password(source.encrypted_password)
+        raise ValueError(
+            "Password is required: provide password in the request or save a "
+            "credential on the Target first"
+        )
+
     def _session(self) -> Session:
         ensure_catalog_schema(self.settings)
         return get_catalog_session_factory(self.settings)()
@@ -118,6 +154,7 @@ class TargetService:
         session = self._session()
         try:
             db_type = normalize_db_type(payload.db_type)
+            ciphertext = self._encrypt_password(payload.password)
             source = CatalogSource(
                 source_name=payload.source_name.strip(),
                 db_type=db_type,
@@ -126,6 +163,7 @@ class TargetService:
                 database_name=payload.database_name.strip(),
                 default_schema=payload.default_schema.strip() or "public",
                 username=payload.username.strip(),
+                encrypted_password=ciphertext,
                 connection_options=payload.connection_options,
                 enabled=payload.enabled,
             )
@@ -148,12 +186,19 @@ class TargetService:
                 raise LookupError(f"target not found: {target_id}")
 
             data = payload.model_dump(exclude_unset=True)
+            password = data.pop("password", None)
+            clear_saved = bool(data.pop("clear_saved_password", False))
             if "db_type" in data and data["db_type"] is not None:
                 data["db_type"] = normalize_db_type(data["db_type"])
             for key, value in data.items():
                 if isinstance(value, str):
                     value = value.strip()
                 setattr(source, key, value)
+
+            if clear_saved:
+                source.encrypted_password = None
+            elif password:
+                source.encrypted_password = self._encrypt_password(password)
 
             session.commit()
             session.refresh(source)
@@ -165,49 +210,61 @@ class TargetService:
         finally:
             session.close()
 
-    def test_connection(self, target_id: int, password: str) -> dict[str, Any]:
+    def test_connection(
+        self, target_id: int, password: str | None = None
+    ) -> dict[str, Any]:
         session = self._session()
         engine = None
+        resolved = ""
         try:
             source = session.get(CatalogSource, target_id)
             if source is None:
                 raise LookupError(f"target not found: {target_id}")
+            resolved = self.resolve_password(source, password)
             info = _source_to_connection_info(source)
             engine = create_target_engine(
                 info,
-                password,
+                resolved,
                 connect_timeout_seconds=self._connect_timeout_seconds(),
             )
             return probe_connection(engine, info.db_type)
         except LookupError:
             raise
+        except ValueError:
+            raise
         except Exception as exc:  # noqa: BLE001
-            self._raise_connection_error(exc, password)
+            self._raise_connection_error(exc, resolved)
             raise  # pragma: no cover
         finally:
             if engine is not None:
                 engine.dispose()
             session.close()
 
-    def list_schemas(self, target_id: int, password: str) -> list[str]:
+    def list_schemas(
+        self, target_id: int, password: str | None = None
+    ) -> list[str]:
         session = self._session()
         engine = None
+        resolved = ""
         try:
             source = session.get(CatalogSource, target_id)
             if source is None:
                 raise LookupError(f"target not found: {target_id}")
+            resolved = self.resolve_password(source, password)
             info = _source_to_connection_info(source)
             engine = create_target_engine(
                 info,
-                password,
+                resolved,
                 connect_timeout_seconds=self._connect_timeout_seconds(),
             )
             inspector = create_schema_inspector(info.db_type, engine, info.database_name)
             return inspector.list_schemas()
         except LookupError:
             raise
+        except ValueError:
+            raise
         except Exception as exc:  # noqa: BLE001
-            self._raise_connection_error(exc, password)
+            self._raise_connection_error(exc, resolved)
             raise  # pragma: no cover
         finally:
             if engine is not None:
@@ -236,7 +293,7 @@ class TargetService:
     def analyze_target(
         self,
         target_id: int,
-        password: str,
+        password: str | None,
         schemas: list[str],
     ) -> CatalogAnalysisRun:
         schema_list = [s.strip() for s in schemas if s and s.strip()]
@@ -248,6 +305,7 @@ class TargetService:
         session: Session = factory()
         run: CatalogAnalysisRun | None = None
         engine = None
+        resolved = ""
         target_schema = ",".join(sorted(set(schema_list)))[:100]
 
         try:
@@ -256,6 +314,7 @@ class TargetService:
                 raise LookupError(f"target not found: {target_id}")
             if not source.enabled:
                 raise ValueError(f"target is disabled: {source.source_name}")
+            resolved = self.resolve_password(source, password)
 
             run = CatalogAnalysisRun(
                 source_id=source.id,
@@ -273,20 +332,20 @@ class TargetService:
             try:
                 engine = create_target_engine(
                     info,
-                    password,
+                    resolved,
                     connect_timeout_seconds=self._connect_timeout_seconds(),
                 )
                 probe_connection(engine, info.db_type)
             except Exception as connect_exc:  # noqa: BLE001
                 session.rollback()
                 safe_msg = _safe_error_message(
-                    connect_exc, password, settings=self.settings
+                    connect_exc, resolved, settings=self.settings
                 )
                 logger.exception(
                     "Target schema analysis connection FAILED: %s", safe_msg
                 )
                 self._mark_run_failed(session, run, safe_msg)
-                self._raise_connection_error(connect_exc, password)
+                self._raise_connection_error(connect_exc, resolved)
                 raise  # pragma: no cover
 
             # Phase 2: inspect / catalog write — keep FAILED analysis run on errors
@@ -332,7 +391,7 @@ class TargetService:
                 return run
             except Exception as exc:  # noqa: BLE001
                 session.rollback()
-                safe_msg = _safe_error_message(exc, password, settings=self.settings)
+                safe_msg = _safe_error_message(exc, resolved, settings=self.settings)
                 logger.exception("Target schema analysis FAILED: %s", safe_msg)
                 failed = self._mark_run_failed(session, run, safe_msg)
                 if failed is not None:
@@ -368,6 +427,86 @@ class TargetService:
         finally:
             if engine is not None:
                 engine.dispose()
+            session.close()
+
+
+    def delete_target(self, target_id: int) -> None:
+        """Delete a Target and all source-scoped catalog/search/embedding rows."""
+        session = self._session()
+        try:
+            source = session.get(CatalogSource, target_id)
+            if source is None:
+                raise LookupError(f"target not found: {target_id}")
+
+            # Break run FK references before deleting dependent rows.
+            table_ids = [
+                r[0]
+                for r in session.execute(
+                    select(CatalogTable.id).where(CatalogTable.source_id == target_id)
+                ).all()
+            ]
+            session.execute(
+                text("UPDATE catalog_table SET last_run_id = NULL WHERE source_id = :sid"),
+                {"sid": target_id},
+            )
+            if table_ids:
+                session.execute(
+                    text(
+                        "UPDATE catalog_column SET last_run_id = NULL "
+                        "WHERE table_id = ANY(:ids)"
+                    ),
+                    {"ids": table_ids},
+                )
+                session.execute(
+                    text(
+                        "UPDATE catalog_index SET last_run_id = NULL "
+                        "WHERE table_id = ANY(:ids)"
+                    ),
+                    {"ids": table_ids},
+                )
+                session.execute(
+                    text(
+                        "UPDATE catalog_key_constraint SET last_run_id = NULL "
+                        "WHERE table_id = ANY(:ids)"
+                    ),
+                    {"ids": table_ids},
+                )
+            session.execute(
+                text(
+                    "UPDATE catalog_relation SET last_run_id = NULL WHERE source_id = :sid"
+                ),
+                {"sid": target_id},
+            )
+            # Embeddings hang off search documents (CASCADE) — delete docs first.
+            session.execute(
+                text("DELETE FROM catalog_search_document WHERE source_id = :sid"),
+                {"sid": target_id},
+            )
+            session.execute(
+                text("DELETE FROM catalog_embedding_run WHERE source_id = :sid"),
+                {"sid": target_id},
+            )
+            session.execute(
+                text("DELETE FROM catalog_relation WHERE source_id = :sid"),
+                {"sid": target_id},
+            )
+            session.execute(
+                text("DELETE FROM catalog_table WHERE source_id = :sid"),
+                {"sid": target_id},
+            )
+            session.execute(
+                text("DELETE FROM catalog_analysis_run WHERE source_id = :sid"),
+                {"sid": target_id},
+            )
+            session.delete(source)
+            session.commit()
+        except LookupError:
+            session.rollback()
+            raise
+        except Exception:
+            session.rollback()
+            raise
+        finally:
             session.close()
 
     def catalog_summary(self, target_id: int) -> dict[str, Any]:

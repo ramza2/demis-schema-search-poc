@@ -35,6 +35,8 @@ class CatalogSource(CatalogBase):
     database_name: Mapped[str] = mapped_column(String(100), nullable=False)
     default_schema: Mapped[str] = mapped_column(String(100), nullable=False, default="public")
     username: Mapped[str | None] = mapped_column(String(255))
+    # Fernet ciphertext for Target DB password (never returned by API).
+    encrypted_password: Mapped[str | None] = mapped_column(Text)
     connection_options: Mapped[dict | None] = mapped_column(JSONB)
     enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

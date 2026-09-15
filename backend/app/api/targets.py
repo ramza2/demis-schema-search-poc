@@ -1,9 +1,10 @@
-"""Target management APIs (password never persisted)."""
+"""Target management APIs (credentials encrypted at rest; never returned)."""
 
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Response
 
+from app.models.catalog import CatalogSource
 from app.schemas.schema_api import AnalyzeResponse
 from app.schemas.target_api import (
     AnalyzeRequest,
@@ -34,10 +35,29 @@ def _http_from_runtime(exc: RuntimeError) -> HTTPException:
     return HTTPException(status_code=502, detail=str(exc))
 
 
+def _to_target_out(source: CatalogSource) -> TargetOut:
+    """Map ORM row to API model without exposing ciphertext."""
+    return TargetOut(
+        id=source.id,
+        source_name=source.source_name,
+        db_type=source.db_type,
+        host=source.host,
+        port=source.port,
+        database_name=source.database_name,
+        default_schema=source.default_schema,
+        username=source.username,
+        connection_options=source.connection_options,
+        enabled=source.enabled,
+        has_saved_password=bool(source.encrypted_password),
+        created_at=source.created_at,
+        updated_at=source.updated_at,
+    )
+
+
 @router.get("", response_model=list[TargetOut])
 def list_targets() -> list[TargetOut]:
     service = TargetService()
-    return [TargetOut.model_validate(t) for t in service.list_targets()]
+    return [_to_target_out(t) for t in service.list_targets()]
 
 
 @router.post("", response_model=TargetOut, status_code=201)
@@ -47,7 +67,7 @@ def create_target(payload: TargetCreate) -> TargetOut:
         source = service.create_target(payload)
     except ValueError as exc:
         raise _http_from_value(exc) from exc
-    return TargetOut.model_validate(source)
+    return _to_target_out(source)
 
 
 @router.put("/{target_id}", response_model=TargetOut)
@@ -59,28 +79,48 @@ def update_target(target_id: int, payload: TargetUpdate) -> TargetOut:
         raise _http_from_lookup(exc) from exc
     except ValueError as exc:
         raise _http_from_value(exc) from exc
-    return TargetOut.model_validate(source)
+    return _to_target_out(source)
+
+
+@router.delete("/{target_id}", status_code=204)
+def delete_target(target_id: int) -> Response:
+    service = TargetService()
+    try:
+        service.delete_target(target_id)
+    except LookupError as exc:
+        raise _http_from_lookup(exc) from exc
+    return Response(status_code=204)
 
 
 @router.post("/{target_id}/test", response_model=TestConnectionResponse)
-def test_target_connection(target_id: int, body: PasswordRequest) -> TestConnectionResponse:
+def test_target_connection(
+    target_id: int, body: PasswordRequest | None = None
+) -> TestConnectionResponse:
     service = TargetService()
+    password = body.password if body is not None else None
     try:
-        result = service.test_connection(target_id, body.password)
+        result = service.test_connection(target_id, password)
     except LookupError as exc:
         raise _http_from_lookup(exc) from exc
+    except ValueError as exc:
+        raise _http_from_value(exc) from exc
     except RuntimeError as exc:
         raise _http_from_runtime(exc) from exc
     return TestConnectionResponse(**result)
 
 
 @router.post("/{target_id}/schemas", response_model=SchemaListResponse)
-def list_target_schemas(target_id: int, body: PasswordRequest) -> SchemaListResponse:
+def list_target_schemas(
+    target_id: int, body: PasswordRequest | None = None
+) -> SchemaListResponse:
     service = TargetService()
+    password = body.password if body is not None else None
     try:
-        schemas = service.list_schemas(target_id, body.password)
+        schemas = service.list_schemas(target_id, password)
     except LookupError as exc:
         raise _http_from_lookup(exc) from exc
+    except ValueError as exc:
+        raise _http_from_value(exc) from exc
     except RuntimeError as exc:
         raise _http_from_runtime(exc) from exc
     return SchemaListResponse(schemas=schemas)
