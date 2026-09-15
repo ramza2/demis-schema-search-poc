@@ -92,7 +92,6 @@ class TargetService:
             ) from None
         raise RuntimeError(safe) from None
 
-
     def _encryption_key(self) -> str | None:
         return self.settings.target_credential_encryption_key
 
@@ -113,8 +112,8 @@ class TargetService:
         source: CatalogSource,
         request_password: str | None,
     ) -> str:
-        """Prefer request password; otherwise decrypt saved credential."""
-        if request_password:
+        """Prefer an explicitly supplied password, including the empty string."""
+        if request_password is not None:
             return request_password
         if source.encrypted_password:
             return self._decrypt_password(source.encrypted_password)
@@ -197,7 +196,7 @@ class TargetService:
 
             if clear_saved:
                 source.encrypted_password = None
-            elif password:
+            elif password is not None:
                 source.encrypted_password = self._encrypt_password(password)
 
             session.commit()
@@ -428,7 +427,6 @@ class TargetService:
             if engine is not None:
                 engine.dispose()
             session.close()
-
 
     def delete_target(self, target_id: int) -> None:
         """Delete a Target and all source-scoped catalog/search/embedding rows."""
