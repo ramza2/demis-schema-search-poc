@@ -4,219 +4,224 @@
 
 ## 1. 현재 Step
 
-**Step 3 — CPU-only Embedding Pipeline + pgvector**
+**Step 4.1 — Search Evaluation Readiness** (Step 4 Hybrid Search 보완)
 
-Raw Schema Catalog를 기반으로 deterministic Search Document를 만들고,
-CPU-only BGE-M3(또는 Fake Provider)로 Embedding을 생성하여 `schema_catalog`의 pgvector 컬럼에 저장합니다.
+생성형 LLM 없이 자연어 의료 업무 요청을 입력하면,
+Schema Metadata Embedding + Keyword + 의료용어 사전 + FK 관계 정보를 이용해
+관련 Table / Column / 관계 경로 후보를 탐색합니다.
 
-이번 Step에서는 Semantic Search / Keyword Search / Hybrid Search / 자연어 검색 UI를 구현하지 않습니다.
+자연어 → SQL 생성은 **구현하지 않습니다**.
 
-## 2. Step 3 Architecture
+## 2. Search Architecture
 
 ```text
-medical-db
-   ↓ metadata only
-
-Schema Analyzer
+User NL Query
    ↓
-
-Raw Schema Catalog
+Query Normalizer
    ↓
-
-SearchDocumentBuilder
+Medical Terminology Expander  (ON/OFF)
    ↓
-
-catalog_search_document
-   ↓
-
-BgeM3EmbeddingProvider (CPU-only) / FakeEmbeddingProvider
-   ↓
-
-catalog_embedding
-VECTOR(1024)
+┌────────────────┬────────────────┐
+│ Semantic Search│ Keyword Search │
+│ BGE-M3 + pgvector│ PG FTS/token  │
+└────────┬───────┴────────┬───────┘
+         └──────┬─────────┘
+                ↓
+           Hybrid Ranker (RRF)
+                ↓
+          Seed Schema Results
+                ↓
+         FK Relation Expansion (BFS)
+                ↓
+         Final Schema Candidates
 ```
 
-원칙:
+## 3. Search Modes
 
-- Raw Catalog는 Source of Truth
-- Search Document / Embedding은 언제든 재생성 가능한 Derived Data
-- Generative LLM 사용 금지 (Embedding 모델만 허용)
-- Schema Metadata만 Embedding (환자 Row / Seed 업무 데이터 제외)
+| Mode | 설명 |
+|------|------|
+| `semantic` | Query Embedding ↔ Document Embedding cosine |
+| `keyword` | Physical name / comment token matching (PG only) |
+| `hybrid` | RRF fusion of semantic + keyword ranks (default) |
 
-## 3. Search Document
+API:
 
-| Object Type | 포함 내용 |
-|------------|-----------|
-| TABLE | schema/table/comment, columns+comments, PK, UNIQUE, FK |
-| COLUMN | parent table/comment, column/comment/type, PK/UNIQUE, FK target |
+```http
+POST /api/v1/search/schema
+```
 
-Natural Key 예:
+```json
+{
+  "query": "최근 간수치 검사 결과",
+  "mode": "hybrid",
+  "top_k": 10,
+  "object_type": "ALL",
+  "expand_terms": true,
+  "expand_relations": true,
+  "max_relation_hops": 2,
+  "debug": false
+}
+```
 
-- `table:{source_id}:{schema}:{table}`
-- `column:{source_id}:{schema}:{table}:{column}`
+## 4. Model Identity (Path-independent)
 
-동일 Catalog로 rebuild하면 동일 `searchable_text` / `document_fingerprint`가 나와야 합니다.
-
-## 4. Embedding Model (CPU-only)
-
-기본 설정:
+Loading path와 logical identity를 분리합니다.
 
 ```env
-EMBEDDING_PROVIDER=bge_m3   # 또는 fake
 EMBEDDING_MODEL_NAME=BAAI/bge-m3
-EMBEDDING_DEVICE=cpu
-EMBEDDING_DIMENSION=1024
-EMBEDDING_BATCH_SIZE=8
-EMBEDDING_MAX_SEQ_LENGTH=1024
-EMBEDDING_NORMALIZE=true
-```
-
-Offline / 폐쇄망:
-
-```env
+EMBEDDING_MODEL_REVISION=default
 EMBEDDING_MODEL_PATH=/models/local/bge-m3
-HF_HUB_OFFLINE=true
 ```
 
-모델 선택 우선순위:
+`model_key` 예:
 
-1. `EMBEDDING_MODEL_PATH`가 유효하면 Local Path
-2. 그렇지 않으면 `EMBEDDING_MODEL_NAME`
-
-모델 파일은 Git에 커밋하지 않습니다 (`models/`, `model-cache/`는 `.gitignore`).
-
-Dockerfile은 **CPU-only torch 2.6+** 를 설치합니다.  
-(transformers가 `.bin` 체크포인트 로드 시 CVE-2025-32434 대응으로 torch>=2.6을 요구하기 때문입니다.  
-`model.safetensors`가 있으면 torch 2.5에서도 로드 가능합니다.)
-
-### 모델 다운로드
-
-Backend 시작 시 자동 다운로드하지 않습니다 (lazy load).
-
-```bash
-# host에서 다운로드 후 ./models 를 컨테이너에 마운트 (/models/local)
-mkdir -p models
-cd backend && python scripts/download_embedding_model.py --output ../models/bge-m3
-
-# (권장) safetensors 변환 — 컨테이너 네트워크가 막혀 torch를 올리지 못할 때 유용
-python - <<'PY'
-from transformers import AutoModel
-AutoModel.from_pretrained("../models/bge-m3", local_files_only=True).save_pretrained(
-    "../models/bge-m3", safe_serialization=True
-)
-PY
-
-# 또는 컨테이너 내부(외부망 가능 시)
-docker compose exec backend python scripts/download_embedding_model.py --output /models/local/bge-m3
+```text
+BAAI/bge-m3|rev=default|dim=1024|norm=true|maxlen=1024
 ```
 
-Offline 실행 예:
+동일 모델이 서버마다 다른 Path에 있어도 `model_key`는 같습니다.
+Document Embedding과 Query Embedding은 **동일 model_key**를 사용합니다.
 
-```bash
-EMBEDDING_PROVIDER=bge_m3 \
-EMBEDDING_MODEL_PATH=/models/local/bge-m3 \
-HF_HUB_OFFLINE=1 \
-docker compose up backend
+## 5. Fake Provider Protection
+
+기본 Compose는 `EMBEDDING_PROVIDER=fake` (CI/빠른 기동).
+
+- Fake 상태에서 Semantic/Hybrid는 기본 차단 (`SEMANTIC_PROVIDER_NOT_AVAILABLE`)
+- 테스트에서만 `ALLOW_FAKE_SEMANTIC_SEARCH=true`로 허용
+- Keyword mode는 Fake에서도 동작
+- Streamlit에 Fake 경고 표시
+
+## 6. Medical Terminology Dictionary
+
+**Source of Truth:** `backend/app/resources/medical_terms.json` (YAML 미사용)
+
+Concept 구조:
+
+```json
+{
+  "id": "liver_function",
+  "label": "간기능",
+  "triggers": ["간수치", "AST", "ALT"],
+  "expansion_terms": ["AST", "ALT", "임상검사", "검사결과"]
+}
 ```
 
-## 5. API
+| 필드 | 역할 |
+|------|------|
+| `triggers` | Concept을 식별하는 비교적 고유한 용어 |
+| `expansion_terms` | Trigger 이후 Recall을 높이는 용어 (범용어 허용) |
 
-| Method | Path | 설명 |
-|--------|------|------|
-| POST | `/api/v1/schema/analyze` | Schema Analyze (Embedding 자동 실행 없음) |
-| POST | `/api/v1/embeddings/documents/rebuild` | Search Document 생성/갱신 |
-| POST | `/api/v1/embeddings/run` | active document Embedding |
-| GET | `/api/v1/embeddings/runs` | Embedding Run 이력 |
-| GET | `/api/v1/embeddings/runs/{run_id}` | Run 상세 |
-| GET | `/api/v1/embeddings/stats` | document/embedding/stale 통계 |
-| GET | `/api/v1/embeddings/documents` | Search Document 목록 |
-| GET | `/api/v1/embeddings/documents/{id}` | Search Document 상세 |
+평가 왜곡 방지:
 
-검색 Query API (`/search`, `/semantic-search`, `/query`)는 Step 4 범위입니다.
+- 범용어(`검사결과`, `진단`, `임상문서`, `encounter`)는 `triggers`에 넣지 않음
+- 정답 Table/Column 물리명(`tb_*`, `exm_cd`) 및 Query→Table Mapping 금지
+- `AST` / `ALT` / `HbA1c` / `Creatinine` 같은 의료용어는 허용
+- `expand_terms=true|false`로 ON/OFF 비교 가능
 
-### Incremental Embedding
+## 7. Hybrid Ranking (RRF)
 
-동일 `model_key` + 동일 `document_fingerprint`이면 skip 합니다.
+```text
+rrf = 1/(K + semantic_rank) + 1/(K + keyword_rank)
+K default = 60
+```
 
-## 6. Docker Compose
+한쪽 검색에만 등장한 Document도 포함합니다.
+
+## 8. FK Relation Expansion (Schema-qualified)
+
+- `catalog_relation` 기반 Python BFS (Inbound/Outbound)
+- Node identity: `(schema_name, table_name)` 또는 `catalog_table.id`
+- Dedup key: `seed_schema.seed_table -> target_schema.target_table`
+- Direct Result에 `schema_name` 포함
+- `expand_relations` ON/OFF, `max_relation_hops` (기본 2, 최대 4)
+- Cycle-safe visited set (table id)
+- RELATED 결과는 DIRECT score와 분리 (`match_type=RELATED`)
+- 현재 medical_demo는 `public` 단일 Schema로 동작
+
+## 9. Search Timing
+
+응답 `timings`:
+
+| Key | Semantic | Keyword | Hybrid | Relation ON |
+|-----|----------|---------|--------|-------------|
+| `query_embedding_ms` | ✓ | | ✓ | |
+| `semantic_search_ms` | ✓ | | ✓ | |
+| `keyword_search_ms` | | ✓ | ✓ | |
+| `relation_expansion_ms` | | | | ✓ |
+| `total_ms` | ✓ | ✓ | ✓ | ✓ |
+
+Query Embedding과 pgvector Search 시간을 분리 측정합니다.
+
+## 10. Keyword Search
+
+- Elasticsearch 미사용
+- PostgreSQL `simple` FTS + ILIKE / identifier boost
+- Physical name (`tb_lab_rst`, `exm_cd`) 강한 매칭
+
+## 11. Streamlit UI
+
+`http://localhost:8501`
+
+- Query input, mode, expansion options, top_k, hops
+- Direct results + Related FK paths + timings
+- NL→SQL UI 없음
+
+## 12. 실행
 
 ```bash
 cp .env.example .env
 mkdir -p models
 docker compose up --build
+
+# Fake(기본)
+curl -s -X POST localhost:8000/api/v1/search/schema \
+  -H 'Content-Type: application/json' \
+  -d '{"query":"tb_lab_rst","mode":"keyword"}'
+
+# Real BGE-M3
+EMBEDDING_PROVIDER=bge_m3 \
+EMBEDDING_MODEL_PATH=/models/local/bge-m3 \
+HF_HUB_OFFLINE=1 \
+  docker compose up backend
 ```
 
-서비스:
-
-- medical-db :5433
-- catalog-db :5434 (pgvector)
-- backend :8000
-- frontend :8501
-
-Compose 기본 `EMBEDDING_PROVIDER=fake` (빠른 기동/CI용).
-실제 BGE-M3:
+모델 다운로드:
 
 ```bash
-EMBEDDING_PROVIDER=bge_m3 docker compose up --build backend
+cd backend && python scripts/download_embedding_model.py --output ../models/bge-m3
 ```
 
-## 7. 테스트
+## 13. 테스트
 
 ```bash
-# Fake Provider 기반 (기본, 모델 다운로드 없음)
-bash scripts/run_tests.sh
-
-# 또는
-docker compose exec -e EMBEDDING_PROVIDER=fake backend pytest -q
+docker compose exec -e EMBEDDING_PROVIDER=fake -e ALLOW_FAKE_SEMANTIC_SEARCH=true \
+  -e CATALOG_DB_HOST=catalog-db -e MEDICAL_DB_HOST=medical-db \
+  -e CATALOG_DB_PORT=5432 -e MEDICAL_DB_PORT=5432 \
+  backend pytest -q
 ```
 
-실제 BGE-M3 smoke (선택):
+## 14. Baseline Queries (평가용 Gold는 Step 5/6)
 
-```bash
-# 로컬 모델이 ./models/bge-m3 에 있어야 합니다.
-docker compose exec \
-  -e EMBEDDING_PROVIDER=bge_m3 \
-  -e EMBEDDING_MODEL_PATH=/models/local/bge-m3 \
-  -e HF_HUB_OFFLINE=1 \
-  -e RUN_BGE_M3_SMOKE=1 \
-  backend pytest -q tests/test_bge_m3_smoke.py -s
-```
+1. 최근 간수치 검사 결과
+2. 환자의 최근 혈당 검사
+3. 신장기능 검사 결과
+4. 최근 처방 약품
+5. 고혈압 진단 이력
+6. 최근 영상 판독 결과
+7. 최근 입원 기록
+8. 퇴원요약 문서
+9. 검사결과값이 저장된 컬럼
+10. exm_cd 컬럼
 
-## 8. pgvector
+## 15. 이번 Step에서 하지 않은 것
 
-- Extension: `CREATE EXTENSION IF NOT EXISTS vector;`
-- Fresh volume: init SQL
-- Existing volume: backend bootstrap에서도 안전하게 활성화
-- Dimension: VECTOR(1024)
-- HNSW/IVFFlat index는 Step 4에서 검토
+- Gold Dataset / Recall@K / MRR / NDCG / 평가 Dashboard
+- 자연어 → SQL / Dynamic SQL / SQL 실행
+- Query Router / Approved Template / HNSW
+- RAG / 생성형 LLM
+- 실제 DEMIS 연결 / 환자 데이터 조회
 
-## 9. 현재 제한사항
+## 16. 다음 Step
 
-- Semantic / Keyword / Hybrid Search 미구현
-- FK Relation Expansion 검색 미구현
-- Synonym Dictionary / Query Expansion 미구현
-- 자연어 검색 UI 미구현
-- Generative LLM / NL→SQL 미사용
-
-## 10. Step 4 제안
-
-1. Semantic Search (query embedding + cosine similarity)
-2. Keyword Search
-3. Synonym Query Expansion
-4. Hybrid Ranking (RRF 등)
-5. FK Relation Expansion
-
-## Roadmap
-
-| Step | 내용 | 상태 |
-|------|------|------|
-| 1 | Foundation + Mock Medical DB | 완료 |
-| 2 | Schema Analyzer + Schema Catalog | 완료 |
-| 3 | CPU-only Embedding + pgvector | **현재** |
-| 4 | Hybrid Search + FK Expansion | 예정 |
-| 5 | Streamlit Schema Explorer | 예정 |
-| 6 | 정확도 평가 / Schema Change Detection | 예정 |
-
-## License
-
-PoC / internal evaluation use.
+- Step 5/6: Gold set 기반 정량평가 (Recall@K / MRR), mode ablation
+- 검색 로직 기능 확장은 Step 4.1에서 종료

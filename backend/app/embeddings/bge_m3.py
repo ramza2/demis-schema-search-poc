@@ -78,13 +78,15 @@ class BgeM3EmbeddingProvider(EmbeddingProvider):
 
     @property
     def model_name(self) -> str:
-        return self._resolve_identity()
+        # Logical name (path-independent) for API / model_key identity.
+        return self._model_name
 
     @property
     def model_key(self) -> str:
         if self._model_key:
             return self._model_key
-        identity = self._resolve_identity()
+        # Fallback: logical name only — never bake filesystem path into model_key.
+        identity = self._model_name
         rev = self._model_revision or "default"
         norm = "true" if self._normalize else "false"
         return (

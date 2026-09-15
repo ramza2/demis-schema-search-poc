@@ -74,6 +74,11 @@ services:
       EMBEDDING_NUM_THREADS: ${EMBEDDING_NUM_THREADS:-}
       HF_HUB_OFFLINE: ${HF_HUB_OFFLINE:-false}
       HF_HOME: /models/hf-cache
+      # Step 4 search
+      ALLOW_FAKE_SEMANTIC_SEARCH: ${ALLOW_FAKE_SEMANTIC_SEARCH:-false}
+      SEARCH_RRF_K: ${SEARCH_RRF_K:-60}
+      SEARCH_CANDIDATE_MULTIPLIER: ${SEARCH_CANDIDATE_MULTIPLIER:-3}
+      SEARCH_CANDIDATE_MIN: ${SEARCH_CANDIDATE_MIN:-20}
     volumes:
       - embedding_model_cache:/models/hf-cache
       - ./models:/models/local:ro
@@ -102,6 +107,8 @@ services:
     build:
       context: ./frontend
     container_name: demis-frontend
+    volumes:
+      - ./frontend/app.py:/app/app.py:ro
     environment:
       # Compose service DNS (internal network)
       BACKEND_URL: http://backend:8000

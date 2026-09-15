@@ -1,0 +1,178 @@
+{
+  "concepts": [
+    {
+      "id": "liver_function",
+      "label": "간기능",
+      "triggers": [
+        "간수치",
+        "간기능",
+        "간기능검사",
+        "간 수치",
+        "간 기능",
+        "liver function",
+        "LFT",
+        "AST",
+        "ALT",
+        "GOT",
+        "GPT",
+        "GGT",
+        "γ-GTP",
+        "γGTP",
+        "ALP",
+        "bilirubin",
+        "빌리루빈"
+      ],
+      "expansion_terms": [
+        "간기능",
+        "liver function",
+        "LFT",
+        "AST",
+        "ALT",
+        "GOT",
+        "GPT",
+        "GGT",
+        "ALP",
+        "bilirubin",
+        "빌리루빈",
+        "임상검사",
+        "검사결과"
+      ]
+    },
+    {
+      "id": "blood_glucose",
+      "label": "혈당",
+      "triggers": [
+        "혈당",
+        "혈당 검사",
+        "glucose",
+        "FBS",
+        "fasting blood sugar",
+        "HbA1c",
+        "당화혈색소"
+      ],
+      "expansion_terms": [
+        "혈당",
+        "glucose",
+        "FBS",
+        "HbA1c",
+        "당화혈색소",
+        "임상검사",
+        "검사결과"
+      ]
+    },
+    {
+      "id": "renal_function",
+      "label": "신장기능",
+      "triggers": [
+        "신장기능",
+        "콩팥기능",
+        "신장 기능",
+        "콩팥 기능",
+        "renal function",
+        "kidney function",
+        "creatinine",
+        "Creatinine",
+        "eGFR",
+        "BUN"
+      ],
+      "expansion_terms": [
+        "신장기능",
+        "renal function",
+        "kidney function",
+        "creatinine",
+        "eGFR",
+        "BUN",
+        "임상검사",
+        "검사결과"
+      ]
+    },
+    {
+      "id": "hypertension",
+      "label": "고혈압",
+      "triggers": [
+        "고혈압",
+        "hypertension"
+      ],
+      "expansion_terms": [
+        "고혈압",
+        "hypertension",
+        "진단",
+        "진단이력"
+      ]
+    },
+    {
+      "id": "radiology_report",
+      "label": "영상판독",
+      "triggers": [
+        "영상판독",
+        "영상 판독",
+        "판독결과",
+        "판독 결과",
+        "radiology report",
+        "imaging report",
+        "영상검사",
+        "영상 검사"
+      ],
+      "expansion_terms": [
+        "영상판독",
+        "판독결과",
+        "radiology report",
+        "imaging report",
+        "영상검사"
+      ]
+    },
+    {
+      "id": "discharge_summary",
+      "label": "퇴원요약",
+      "triggers": [
+        "퇴원요약",
+        "퇴원 요약",
+        "discharge summary"
+      ],
+      "expansion_terms": [
+        "퇴원요약",
+        "discharge summary",
+        "임상문서",
+        "진료문서"
+      ]
+    },
+    {
+      "id": "medication",
+      "label": "처방",
+      "triggers": [
+        "처방",
+        "처방 약품",
+        "medication",
+        "drug",
+        "medication order",
+        "약품",
+        "투약"
+      ],
+      "expansion_terms": [
+        "처방",
+        "medication",
+        "drug",
+        "약품",
+        "투약"
+      ]
+    },
+    {
+      "id": "admission",
+      "label": "입원",
+      "triggers": [
+        "입원",
+        "입원 기록",
+        "admission",
+        "inpatient",
+        "병동"
+      ],
+      "expansion_terms": [
+        "입원",
+        "admission",
+        "inpatient",
+        "encounter",
+        "병동"
+      ]
+    }
+  ]
+}
