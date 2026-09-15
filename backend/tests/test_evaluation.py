@@ -142,6 +142,12 @@ def test_official_eval_allows_openai_compatible_provider() -> None:
     assert_official_provider(Settings(embedding_provider="openai_compatible"))
 
 
+def test_official_eval_allows_koe5_provider() -> None:
+    from app.core.config import Settings
+
+    assert_official_provider(Settings(embedding_provider="koe5"))
+
+
 def test_official_eval_blocks_fake_provider() -> None:
     from app.core.config import Settings
 
@@ -156,6 +162,7 @@ def test_official_eval_blocks_unknown_provider() -> None:
         assert_official_provider(Settings(embedding_provider="unknown_vendor"))
     assert "openai_compatible" in str(exc.value)
     assert "bge_m3" in str(exc.value)
+    assert "koe5" in str(exc.value)
 
 
 def test_evaluate_query_does_not_reorder_results() -> None:

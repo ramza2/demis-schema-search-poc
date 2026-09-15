@@ -18,7 +18,7 @@ Top-1 / Hit@K / Mean Recall@K / MRR / Latency를 산출합니다.
 
 | Item | Value |
 |------|-------|
-| Embedding | BAAI/bge-m3, dim=1024 (local `bge_m3` or remote `openai_compatible`) |
+| Embedding | BAAI/bge-m3 (historic) or nlpai-lab/KoE5 (offline candidate), dim=1024 |
 | Semantic | pgvector exact cosine |
 | Keyword | PostgreSQL FTS/token |
 | Hybrid | RRF K=60 |
@@ -28,7 +28,7 @@ Top-1 / Hit@K / Mean Recall@K / MRR / Latency를 산출합니다.
 
 ### Embedding provider 구성
 
-**로컬 모델**
+**로컬 BGE-M3 (historic baseline / 개발 비교)**
 
 ```bash
 EMBEDDING_PROVIDER=bge_m3
@@ -38,7 +38,7 @@ EMBEDDING_DIMENSION=1024
 EMBEDDING_NORMALIZE=true
 ```
 
-**공용 OpenAI-compatible API (ALZI)**
+**공용 OpenAI-compatible API (ALZI, 개발 비교용 — 유지)**
 
 ```bash
 EMBEDDING_PROVIDER=openai_compatible
@@ -50,8 +50,40 @@ EMBEDDING_DIMENSION=1024
 EMBEDDING_NORMALIZE=true
 ```
 
-문서 Embedding과 Query Embedding은 동일 provider / `model_key`를 사용합니다.
-원격 API URL은 `model_key`에 포함되지 않습니다.
+**KoE5 local/offline (군 폐쇄망 최종 배포 후보)**
+
+Provenance:
+- Model: `nlpai-lab/KoE5` (NLP&AI Lab, Korea University)
+- Base: `intfloat/multilingual-e5-large`
+- License: MIT
+- Dimension: 1024 (pgvector `vector(1024)` 변경 없음)
+- Max sequence length: 512
+- Pinned revision: `bc6d284c60fe5a973e74c1751b92594c9f581213`
+- `model.safetensors` SHA256: `97693a2aeaeae9ecaac5fc68c5d27007dd1604d667ccbc61a32a52a9035cca67`
+- E5 prefixes (provider 내부 처리): query=`query: `, document=`passage: `
+- Manifest (weights 제외): `models/koe5.manifest.json`
+
+```bash
+# 1) Prepare local weights (do not commit model binaries)
+python backend/scripts/prepare_koe5_model.py --output models/koe5
+
+# 2) Runtime (compose mounts ./models -> /models/local:ro)
+EMBEDDING_PROVIDER=koe5
+EMBEDDING_MODEL_NAME=nlpai-lab/KoE5
+EMBEDDING_MODEL_PATH=/models/local/koe5
+EMBEDDING_MODEL_REVISION=bc6d284c60fe5a973e74c1751b92594c9f581213
+EMBEDDING_DIMENSION=1024
+EMBEDDING_MAX_SEQ_LENGTH=512
+EMBEDDING_NORMALIZE=true
+HF_HUB_OFFLINE=true
+```
+
+Offline 모드에서는 로컬 path가 없거나 불완전하면 자동 Hub 다운로드로 fallback하지 않고
+`ConfigurationError`를 발생시킵니다. 실제 weight는 git에 포함하지 않습니다.
+
+문서 Embedding은 `embed_documents`(passage prefix), 검색 Query는 `embed_queries`(query prefix)를 사용합니다.
+`model_key`에는 provider/revision/dim/norm/maxlen/prefix 정책이 포함되며 local path는 넣지 않습니다.
+BGE-M3와 KoE5 embedding은 서로 다른 `model_key`로 격리됩니다.
 
 ## 3. Evaluation 목적
 
@@ -106,9 +138,9 @@ Gold 구조 예:
 
 ## 7. Runner
 
-Official Evaluation은 실제 BGE-M3 Embedding provider만 허용합니다.
+Official Evaluation은 실제 embedding provider만 허용합니다.
 
-- Local Official: `EMBEDDING_PROVIDER=bge_m3`
+- Local Official: `EMBEDDING_PROVIDER=bge_m3` 또는 `koe5`
 - Remote Official: `EMBEDDING_PROVIDER=openai_compatible`
 - `fake`는 Official에서 차단됩니다 (`--allow-fake`는 unit/dev only)
 

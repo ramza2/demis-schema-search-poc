@@ -219,7 +219,9 @@ __marimo__/
 .streamlit/secrets.toml
 
 # Embedding models / caches (do not commit model weights)
-models/
+models/**
+!models/
+!models/*.manifest.json
 model-cache/
 **/hf-cache/
 **/.cache/huggingface/
@@ -230,3 +232,5 @@ backend/evaluation/results/*
 !backend/evaluation/results/.gitkeep
 !backend/evaluation/results/bge_step5_official/
 !backend/evaluation/results/bge_step5_official/**
+!backend/evaluation/results/koe5_step5_official/
+!backend/evaluation/results/koe5_step5_official/**

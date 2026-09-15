@@ -40,7 +40,8 @@ class Settings(BaseSettings):
     catalog_db_password: str = "catalog_pass_change_me"
 
     # Embedding (Step 3) — CPU-only by default; no generative LLM.
-    embedding_provider: str = "bge_m3"  # bge_m3 | fake | openai_compatible
+    # Providers: fake | bge_m3 | openai_compatible | koe5
+    embedding_provider: str = "bge_m3"
     embedding_model_name: str = "BAAI/bge-m3"
     embedding_model_path: str | None = None
     embedding_model_revision: str | None = None
@@ -136,6 +137,19 @@ class Settings(BaseSettings):
         return self.resolved_load_path()
 
     def build_model_key(self) -> str:
+        provider = (self.embedding_provider or "").strip().lower()
+        if provider == "koe5":
+            from app.embeddings.koe5 import KOE5_PREFIX_POLICY, build_koe5_model_key
+
+            return build_koe5_model_key(
+                model_name=self.resolved_model_identity(),
+                revision=self.embedding_model_revision or "default",
+                dimension=self.embedding_dimension,
+                normalize=self.embedding_normalize,
+                max_seq_length=self.embedding_max_seq_length,
+                prefix_policy=KOE5_PREFIX_POLICY,
+            )
+
         identity = self.resolved_model_identity()
         rev = self.embedding_model_revision or "default"
         norm = "true" if self.embedding_normalize else "false"

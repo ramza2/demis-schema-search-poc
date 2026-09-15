@@ -1,0 +1,11 @@
+{
+  "model_name": "nlpai-lab/KoE5",
+  "developer": "NLP&AI Lab, Korea University",
+  "base_model": "intfloat/multilingual-e5-large",
+  "license": "MIT",
+  "revision": "bc6d284c60fe5a973e74c1751b92594c9f581213",
+  "dimension": 1024,
+  "max_seq_length": 512,
+  "model_safetensors_sha256": "97693a2aeaeae9ecaac5fc68c5d27007dd1604d667ccbc61a32a52a9035cca67",
+  "expected_local_path": "/models/koe5"
+}

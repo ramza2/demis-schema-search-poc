@@ -141,7 +141,7 @@ class EmbeddingService:
             for start in range(0, len(to_embed), batch_size):
                 batch = to_embed[start : start + batch_size]
                 texts = [d.searchable_text for d in batch]
-                vectors = self.provider.embed_texts(texts)
+                vectors = self.provider.embed_documents(texts)
                 if len(vectors) != len(batch):
                     raise EmbeddingError(
                         "EMBEDDING_FAILED",
