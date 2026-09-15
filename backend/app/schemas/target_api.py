@@ -19,8 +19,8 @@ class TargetCreate(BaseModel):
     database_name: str = Field(min_length=1, max_length=100)
     default_schema: str = Field(default="public", min_length=1, max_length=100)
     username: str = Field(min_length=1, max_length=255)
-    # Plaintext only in request; stored as encrypted_password.
-    password: str = Field(min_length=1)
+    # Plaintext only in request; empty string is a valid passwordless credential.
+    password: str
     connection_options: dict[str, Any] | None = None
     enabled: bool = True
 
@@ -38,8 +38,8 @@ class TargetUpdate(BaseModel):
     database_name: str | None = Field(default=None, min_length=1, max_length=100)
     default_schema: str | None = Field(default=None, min_length=1, max_length=100)
     username: str | None = Field(default=None, min_length=1, max_length=255)
-    # Omit / null → keep existing credential. Non-empty → replace.
-    password: str | None = Field(default=None, min_length=1)
+    # Omit / null -> keep existing credential. Empty string -> replace with passwordless credential.
+    password: str | None = None
     clear_saved_password: bool = False
     connection_options: dict[str, Any] | None = None
     enabled: bool | None = None
@@ -53,7 +53,8 @@ class TargetUpdate(BaseModel):
 
     @model_validator(mode="after")
     def _password_vs_clear(self) -> TargetUpdate:
-        if self.clear_saved_password and self.password:
+        password_was_set = "password" in self.model_fields_set and self.password is not None
+        if self.clear_saved_password and password_was_set:
             raise ValueError("password and clear_saved_password cannot both be set")
         return self
 
@@ -79,11 +80,11 @@ class TargetOut(BaseModel):
 class PasswordRequest(BaseModel):
     """Optional password for Test/Discover. Uses saved credential when omitted."""
 
-    password: str | None = Field(default=None, min_length=1)
+    password: str | None = None
 
 
 class AnalyzeRequest(BaseModel):
-    password: str | None = Field(default=None, min_length=1)
+    password: str | None = None
     schemas: list[str] = Field(min_length=1)
 
 
