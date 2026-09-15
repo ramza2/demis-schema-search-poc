@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -21,6 +22,7 @@ from app.embeddings.koe5 import (
     Koe5EmbeddingProvider,
     apply_e5_prefix,
     build_koe5_model_key,
+    resolve_koe5_revision,
 )
 
 
@@ -173,3 +175,49 @@ def test_official_eval_allows_koe5() -> None:
     from app.evaluation.runner import assert_official_provider
 
     assert_official_provider(Settings(embedding_provider="koe5"))
+
+
+def test_empty_revision_resolves_to_pinned_everywhere() -> None:
+    """Empty EMBEDDING_MODEL_REVISION must not emit rev=default for koe5."""
+    assert resolve_koe5_revision(None) == KOE5_PINNED_REVISION
+    assert resolve_koe5_revision("") == KOE5_PINNED_REVISION
+    assert resolve_koe5_revision("   ") == KOE5_PINNED_REVISION
+
+    key = build_koe5_model_key(revision="")
+    assert f"rev={KOE5_PINNED_REVISION}" in key
+    assert "rev=default" not in key
+
+    settings = Settings(
+        embedding_provider="koe5",
+        embedding_model_name=KOE5_REPO_ID,
+        embedding_model_path="/models/local/koe5",
+        embedding_model_revision=None,
+        embedding_dimension=1024,
+        embedding_max_seq_length=512,
+        embedding_normalize=True,
+    )
+    settings_key = settings.build_model_key()
+    assert f"rev={KOE5_PINNED_REVISION}" in settings_key
+    assert "rev=default" not in settings_key
+
+    provider = Koe5EmbeddingProvider(
+        model_path="/models/local/koe5",
+        model_revision=None,
+        hf_hub_offline=True,
+    )
+    assert provider.model_revision == KOE5_PINNED_REVISION
+    assert f"rev={KOE5_PINNED_REVISION}" in provider.model_key
+
+    from app.evaluation.reproducibility import resolve_model_revision
+
+    assert resolve_model_revision(settings) == KOE5_PINNED_REVISION
+
+
+def test_manifest_documents_dev_and_delivery_paths() -> None:
+    manifest_path = Path(__file__).resolve().parents[2] / "models" / "koe5.manifest.json"
+    data = json.loads(manifest_path.read_text(encoding="utf-8"))
+    assert "expected_local_path" not in data
+    assert data["development_host_path"].endswith("/models/koe5")
+    assert data["development_container_path"] == "/models/local/koe5"
+    assert data["final_delivery_container_path"] == "/models/koe5"
+    assert "baked" in data["final_delivery_packaging"].lower()

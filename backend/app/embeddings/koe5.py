@@ -53,6 +53,11 @@ def apply_e5_prefix(text: str, prefix: str) -> str:
     return f"{prefix}{text}"
 
 
+def resolve_koe5_revision(revision: str | None) -> str:
+    """Empty/blank revision always resolves to the pinned KoE5 commit SHA."""
+    return (revision or "").strip() or KOE5_PINNED_REVISION
+
+
 def build_koe5_model_key(
     *,
     model_name: str = KOE5_REPO_ID,
@@ -63,7 +68,7 @@ def build_koe5_model_key(
     prefix_policy: str = KOE5_PREFIX_POLICY,
 ) -> str:
     """Stable model_key — never includes local filesystem path."""
-    rev = (revision or "").strip() or "default"
+    rev = resolve_koe5_revision(revision)
     norm = "true" if normalize else "false"
     return (
         f"provider=koe5|model={model_name}|rev={rev}"

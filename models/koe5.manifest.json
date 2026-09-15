@@ -7,5 +7,8 @@
   "dimension": 1024,
   "max_seq_length": 512,
   "model_safetensors_sha256": "97693a2aeaeae9ecaac5fc68c5d27007dd1604d667ccbc61a32a52a9035cca67",
-  "expected_local_path": "/models/koe5"
+  "development_host_path": "/home/openlink/demis-schema-search-poc/models/koe5",
+  "development_container_path": "/models/local/koe5",
+  "final_delivery_container_path": "/models/koe5",
+  "final_delivery_packaging": "weights baked into backend image (no host mount for final delivery)"
 }

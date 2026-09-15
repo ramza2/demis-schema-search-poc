@@ -69,15 +69,22 @@ def resolve_model_revision(settings: Any) -> str:
     Priority:
     1. EVALUATION_MODEL_REVISION env (evaluation recording override)
     2. EMBEDDING_MODEL_REVISION via Settings.embedding_model_revision
-    3. \"default\"
+    3. KoE5 pinned revision when provider is koe5 and revision is empty
+    4. "default"
     """
     env = (os.environ.get("EVALUATION_MODEL_REVISION") or "").strip()
     if env:
         return env
     rev = getattr(settings, "embedding_model_revision", None)
     if rev is None or str(rev).strip() == "":
+        provider = str(getattr(settings, "embedding_provider", "") or "").strip().lower()
+        if provider == "koe5":
+            from app.embeddings.koe5 import KOE5_PINNED_REVISION
+
+            return KOE5_PINNED_REVISION
         return "default"
     return str(rev).strip()
+
 
 
 def compute_model_artifact_sha256(model_path: str | Path | None) -> str:

@@ -100,7 +100,12 @@ def prepare(
         "dimension": KOE5_DIMENSION,
         "max_seq_length": KOE5_MAX_SEQ_LENGTH,
         "model_safetensors_sha256": expected_sha256,
-        "expected_local_path": "/models/koe5",
+        "development_host_path": "/home/openlink/demis-schema-search-poc/models/koe5",
+        "development_container_path": "/models/local/koe5",
+        "final_delivery_container_path": "/models/koe5",
+        "final_delivery_packaging": (
+            "weights baked into backend image (no host mount for final delivery)"
+        ),
     }
     # Repo-root manifest (weights stay under models/ which is gitignored).
     repo_root = _BACKEND_ROOT.parent

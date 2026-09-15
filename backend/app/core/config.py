@@ -139,11 +139,15 @@ class Settings(BaseSettings):
     def build_model_key(self) -> str:
         provider = (self.embedding_provider or "").strip().lower()
         if provider == "koe5":
-            from app.embeddings.koe5 import KOE5_PREFIX_POLICY, build_koe5_model_key
+            from app.embeddings.koe5 import (
+                KOE5_PREFIX_POLICY,
+                build_koe5_model_key,
+                resolve_koe5_revision,
+            )
 
             return build_koe5_model_key(
                 model_name=self.resolved_model_identity(),
-                revision=self.embedding_model_revision or "default",
+                revision=resolve_koe5_revision(self.embedding_model_revision),
                 dimension=self.embedding_dimension,
                 normalize=self.embedding_normalize,
                 max_seq_length=self.embedding_max_seq_length,
