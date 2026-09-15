@@ -1,0 +1,36 @@
+query_id,query,category,experiment,gold_primary,gold_acceptable,top5_returned,matched_concepts,expanded_terms,reason
+Q011,creatinine / eGFR kidney function labs,paraphrase,keyword_no_expansion,public.tb_lab_rst,public.tb_lab_mst,public.tb_lab_mst,,,primary_top5_miss
+Q013,hypertension diagnosis history,paraphrase,keyword_no_expansion,public.tb_dgn_hist,public.tb_dgn_cd_mst,,,,relevant_top5_miss|primary_top5_miss
+Q016,discharge summary clinical document,paraphrase,keyword_no_expansion,public.tb_cln_doc,public.tb_doc_type,,,,relevant_top5_miss|primary_top5_miss
+Q017,검사결과값이 저장된 컬럼,schema_semantic,keyword_no_expansion,public.tb_lab_rst,,,,,relevant_top5_miss|primary_top5_miss
+Q020,진단일이 저장된 컬럼,schema_semantic,keyword_no_expansion,public.tb_dgn_hist,,,,,relevant_top5_miss|primary_top5_miss
+Q028,pt_no,physical_identifier,keyword_no_expansion,public.tb_pt_mst,public.tb_lab_rst|public.tb_med_ord|public.tb_enc_hist|public.tb_dgn_hist|public.tb_adm_hist,public.tb_adm_hist|public.tb_cln_doc|public.tb_dgn_hist|public.tb_enc_hist|public.tb_img_ord,,,primary_top5_miss
+Q037,검사결과와 검사마스터 관계,relation,keyword_no_expansion,public.tb_lab_rst,,,,,relevant_top5_miss|primary_top5_miss
+Q038,처방약품과 약품마스터 join,relation,keyword_no_expansion,public.tb_med_ord,,,,,relevant_top5_miss|primary_top5_miss
+Q039,진단이력과 진단코드 마스터,relation,keyword_no_expansion,public.tb_dgn_hist,,public.tb_dgn_cd_mst|public.tb_code_mst,,,relevant_top5_miss|primary_top5_miss
+Q040,입원기록과 병동마스터,relation,keyword_no_expansion,public.tb_adm_hist,,,,,relevant_top5_miss|primary_top5_miss
+Q042,임상문서와 문서유형 마스터,relation,keyword_no_expansion,public.tb_cln_doc,,public.tb_doc_type|public.tb_code_mst,,,relevant_top5_miss|primary_top5_miss
+Q044,오더헤더와 오더상세,relation,keyword_no_expansion,public.tb_ord_hdr,,public.tb_img_ord|public.tb_lab_ord,,,relevant_top5_miss|primary_top5_miss
+Q045,진단이력과 encounter,relation,keyword_no_expansion,public.tb_dgn_hist,,public.tb_adm_hist|public.tb_cln_doc|public.tb_enc_hist|public.tb_med_ord,,,relevant_top5_miss|primary_top5_miss
+Q016,discharge summary clinical document,paraphrase,semantic_no_expansion,public.tb_cln_doc,public.tb_doc_type,public.tb_enc_hist|public.tb_doc_type|public.tb_dgn_hist|public.tb_adm_hist,,,primary_top5_miss
+Q018,환자 이름이 들어있는 컬럼,schema_semantic,semantic_no_expansion,public.tb_pt_mst,,public.tb_proc_hist|public.tb_enc_hist|public.tb_proc_mst,,,relevant_top5_miss|primary_top5_miss
+Q028,pt_no,physical_identifier,semantic_no_expansion,public.tb_pt_mst,public.tb_lab_rst|public.tb_med_ord|public.tb_enc_hist|public.tb_dgn_hist|public.tb_adm_hist,public.tb_img_rpt|public.tb_img_ord|public.tb_lab_ord|public.tb_proc_hist|public.tb_lab_rst,,,primary_top5_miss
+Q037,검사결과와 검사마스터 관계,relation,semantic_no_expansion,public.tb_lab_rst,,public.tb_provider|public.tb_dgn_cd_mst|public.tb_lab_mst|public.tb_img_mst|public.tb_proc_mst,,,relevant_top5_miss|primary_top5_miss
+Q043,검사결과와 검사오더 연결,relation,semantic_no_expansion,public.tb_lab_rst,,public.tb_lab_ord|public.tb_img_ord,,,relevant_top5_miss|primary_top5_miss
+Q018,환자 이름이 들어있는 컬럼,schema_semantic,semantic_expansion,public.tb_pt_mst,,public.tb_proc_hist|public.tb_enc_hist|public.tb_proc_mst,,,relevant_top5_miss|primary_top5_miss
+Q028,pt_no,physical_identifier,semantic_expansion,public.tb_pt_mst,public.tb_lab_rst|public.tb_med_ord|public.tb_enc_hist|public.tb_dgn_hist|public.tb_adm_hist,public.tb_img_rpt|public.tb_img_ord|public.tb_lab_ord|public.tb_proc_hist|public.tb_lab_rst,,,primary_top5_miss
+Q037,검사결과와 검사마스터 관계,relation,semantic_expansion,public.tb_lab_rst,,public.tb_provider|public.tb_dgn_cd_mst|public.tb_lab_mst|public.tb_img_mst|public.tb_proc_mst,,,relevant_top5_miss|primary_top5_miss
+Q043,검사결과와 검사오더 연결,relation,semantic_expansion,public.tb_lab_rst,,public.tb_lab_ord|public.tb_img_ord,,,relevant_top5_miss|primary_top5_miss
+Q016,discharge summary clinical document,paraphrase,hybrid_no_expansion,public.tb_cln_doc,public.tb_doc_type,public.tb_enc_hist|public.tb_doc_type|public.tb_dgn_hist|public.tb_adm_hist,,,primary_top5_miss
+Q028,pt_no,physical_identifier,hybrid_no_expansion,public.tb_pt_mst,public.tb_lab_rst|public.tb_med_ord|public.tb_enc_hist|public.tb_dgn_hist|public.tb_adm_hist,public.tb_img_rpt|public.tb_img_ord|public.tb_dgn_hist|public.tb_lab_ord|public.tb_enc_hist,,,primary_top5_miss
+Q037,검사결과와 검사마스터 관계,relation,hybrid_no_expansion,public.tb_lab_rst,,public.tb_provider|public.tb_dgn_cd_mst|public.tb_lab_mst|public.tb_img_mst|public.tb_proc_mst,,,relevant_top5_miss|primary_top5_miss
+Q042,임상문서와 문서유형 마스터,relation,hybrid_no_expansion,public.tb_cln_doc,,public.tb_doc_type|public.tb_dept_mst|public.tb_code_mst,,,relevant_top5_miss|primary_top5_miss
+Q044,오더헤더와 오더상세,relation,hybrid_no_expansion,public.tb_ord_hdr,,public.tb_ord_dtl|public.tb_img_ord|public.tb_lab_ord|public.tb_med_ord,,,relevant_top5_miss|primary_top5_miss
+Q028,pt_no,physical_identifier,hybrid_expansion,public.tb_pt_mst,public.tb_lab_rst|public.tb_med_ord|public.tb_enc_hist|public.tb_dgn_hist|public.tb_adm_hist,public.tb_img_rpt|public.tb_img_ord|public.tb_dgn_hist|public.tb_lab_ord|public.tb_enc_hist,,,primary_top5_miss
+Q037,검사결과와 검사마스터 관계,relation,hybrid_expansion,public.tb_lab_rst,,public.tb_provider|public.tb_dgn_cd_mst|public.tb_lab_mst|public.tb_img_mst|public.tb_proc_mst,,,relevant_top5_miss|primary_top5_miss
+Q042,임상문서와 문서유형 마스터,relation,hybrid_expansion,public.tb_cln_doc,,public.tb_doc_type|public.tb_dept_mst|public.tb_code_mst,,,relevant_top5_miss|primary_top5_miss
+Q044,오더헤더와 오더상세,relation,hybrid_expansion,public.tb_ord_hdr,,public.tb_ord_dtl|public.tb_img_ord|public.tb_lab_ord|public.tb_med_ord,,,relevant_top5_miss|primary_top5_miss
+Q028,pt_no,physical_identifier,hybrid_expansion_relation,public.tb_pt_mst,public.tb_lab_rst|public.tb_med_ord|public.tb_enc_hist|public.tb_dgn_hist|public.tb_adm_hist,public.tb_img_rpt|public.tb_img_ord|public.tb_dgn_hist|public.tb_lab_ord|public.tb_enc_hist,,,primary_top5_miss
+Q037,검사결과와 검사마스터 관계,relation,hybrid_expansion_relation,public.tb_lab_rst,,public.tb_provider|public.tb_dgn_cd_mst|public.tb_lab_mst|public.tb_img_mst|public.tb_proc_mst,,,relevant_top5_miss|primary_top5_miss
+Q042,임상문서와 문서유형 마스터,relation,hybrid_expansion_relation,public.tb_cln_doc,,public.tb_doc_type|public.tb_dept_mst|public.tb_code_mst,,,relevant_top5_miss|primary_top5_miss
+Q044,오더헤더와 오더상세,relation,hybrid_expansion_relation,public.tb_ord_hdr,,public.tb_ord_dtl|public.tb_img_ord|public.tb_lab_ord|public.tb_med_ord,,,relevant_top5_miss|primary_top5_miss

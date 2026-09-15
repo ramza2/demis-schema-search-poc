@@ -1,0 +1,574 @@
+{
+  "version": "1",
+  "description": "DEMIS Schema Semantic Search PoC Step 5 gold queries / 스키마 검색 평가용 골드셋 (45 queries)",
+  "queries": [
+    {
+      "id": "Q001",
+      "category": "clinical_natural_language",
+      "query": "최근 간수치 검사 결과",
+      "gold": {
+        "primary_tables": ["public.tb_lab_rst"],
+        "acceptable_tables": ["public.tb_lab_mst", "public.tb_lab_ord"],
+        "relevant_columns": [
+          "public.tb_lab_rst.rst_val",
+          "public.tb_lab_rst.rst_num",
+          "public.tb_lab_rst.rst_dt",
+          "public.tb_lab_rst.exm_cd",
+          "public.tb_lab_mst.exm_nm"
+        ]
+      }
+    },
+    {
+      "id": "Q002",
+      "category": "clinical_natural_language",
+      "query": "환자의 최근 혈당 검사",
+      "gold": {
+        "primary_tables": ["public.tb_lab_rst"],
+        "acceptable_tables": ["public.tb_lab_mst", "public.tb_lab_ord", "public.tb_pt_mst"],
+        "relevant_columns": [
+          "public.tb_lab_rst.rst_val",
+          "public.tb_lab_rst.rst_num",
+          "public.tb_lab_rst.rst_dt",
+          "public.tb_lab_rst.pt_no",
+          "public.tb_lab_mst.exm_nm"
+        ]
+      }
+    },
+    {
+      "id": "Q003",
+      "category": "clinical_natural_language",
+      "query": "신장기능 검사 결과",
+      "gold": {
+        "primary_tables": ["public.tb_lab_rst"],
+        "acceptable_tables": ["public.tb_lab_mst", "public.tb_lab_ord"],
+        "relevant_columns": [
+          "public.tb_lab_rst.rst_val",
+          "public.tb_lab_rst.rst_num",
+          "public.tb_lab_rst.exm_cd",
+          "public.tb_lab_mst.exm_nm"
+        ]
+      }
+    },
+    {
+      "id": "Q004",
+      "category": "clinical_natural_language",
+      "query": "최근 처방 약품",
+      "gold": {
+        "primary_tables": ["public.tb_med_ord"],
+        "acceptable_tables": ["public.tb_drug_mst", "public.tb_ord_hdr"],
+        "relevant_columns": [
+          "public.tb_med_ord.drug_cd",
+          "public.tb_med_ord.dose_val",
+          "public.tb_med_ord.pt_no",
+          "public.tb_drug_mst.drug_cd"
+        ]
+      }
+    },
+    {
+      "id": "Q005",
+      "category": "clinical_natural_language",
+      "query": "고혈압 진단 이력",
+      "gold": {
+        "primary_tables": ["public.tb_dgn_hist"],
+        "acceptable_tables": ["public.tb_dgn_cd_mst"],
+        "relevant_columns": [
+          "public.tb_dgn_hist.dgn_cd",
+          "public.tb_dgn_hist.dgn_dt",
+          "public.tb_dgn_hist.pt_no",
+          "public.tb_dgn_cd_mst.dgn_cd"
+        ]
+      }
+    },
+    {
+      "id": "Q006",
+      "category": "clinical_natural_language",
+      "query": "최근 영상 판독 결과",
+      "gold": {
+        "primary_tables": ["public.tb_img_rpt"],
+        "acceptable_tables": ["public.tb_img_ord", "public.tb_img_mst"],
+        "relevant_columns": [
+          "public.tb_img_rpt.find_txt",
+          "public.tb_img_rpt.impr_txt",
+          "public.tb_img_rpt.rpt_dt"
+        ]
+      }
+    },
+    {
+      "id": "Q007",
+      "category": "clinical_natural_language",
+      "query": "최근 입원 기록",
+      "gold": {
+        "primary_tables": ["public.tb_adm_hist"],
+        "acceptable_tables": ["public.tb_enc_hist", "public.tb_ward_mst"],
+        "relevant_columns": [
+          "public.tb_adm_hist.ward_cd",
+          "public.tb_adm_hist.adm_dt",
+          "public.tb_adm_hist.pt_no",
+          "public.tb_enc_hist.enc_typ"
+        ]
+      }
+    },
+    {
+      "id": "Q008",
+      "category": "clinical_natural_language",
+      "query": "퇴원요약 문서",
+      "gold": {
+        "primary_tables": ["public.tb_cln_doc"],
+        "acceptable_tables": ["public.tb_doc_type"],
+        "relevant_columns": [
+          "public.tb_cln_doc.doc_body",
+          "public.tb_cln_doc.doc_typ_cd",
+          "public.tb_cln_doc.doc_ttl"
+        ]
+      }
+    },
+    {
+      "id": "Q009",
+      "category": "paraphrase",
+      "query": "간기능 검사 수치 어디서 보나",
+      "gold": {
+        "primary_tables": ["public.tb_lab_rst"],
+        "acceptable_tables": ["public.tb_lab_mst"],
+        "relevant_columns": [
+          "public.tb_lab_rst.rst_val",
+          "public.tb_lab_rst.rst_num",
+          "public.tb_lab_mst.exm_nm"
+        ]
+      }
+    },
+    {
+      "id": "Q010",
+      "category": "paraphrase",
+      "query": "glucose lab results for patient",
+      "gold": {
+        "primary_tables": ["public.tb_lab_rst"],
+        "acceptable_tables": ["public.tb_lab_mst", "public.tb_pt_mst"],
+        "relevant_columns": [
+          "public.tb_lab_rst.rst_val",
+          "public.tb_lab_rst.pt_no",
+          "public.tb_lab_mst.exm_nm"
+        ]
+      }
+    },
+    {
+      "id": "Q011",
+      "category": "paraphrase",
+      "query": "creatinine / eGFR kidney function labs",
+      "gold": {
+        "primary_tables": ["public.tb_lab_rst"],
+        "acceptable_tables": ["public.tb_lab_mst"],
+        "relevant_columns": [
+          "public.tb_lab_rst.rst_num",
+          "public.tb_lab_rst.exm_cd",
+          "public.tb_lab_mst.exm_nm"
+        ]
+      }
+    },
+    {
+      "id": "Q012",
+      "category": "paraphrase",
+      "query": "medication order / 투약 처방 이력",
+      "gold": {
+        "primary_tables": ["public.tb_med_ord"],
+        "acceptable_tables": ["public.tb_drug_mst"],
+        "relevant_columns": [
+          "public.tb_med_ord.drug_cd",
+          "public.tb_med_ord.dose_val"
+        ]
+      }
+    },
+    {
+      "id": "Q013",
+      "category": "paraphrase",
+      "query": "hypertension diagnosis history",
+      "gold": {
+        "primary_tables": ["public.tb_dgn_hist"],
+        "acceptable_tables": ["public.tb_dgn_cd_mst"],
+        "relevant_columns": [
+          "public.tb_dgn_hist.dgn_cd",
+          "public.tb_dgn_hist.dgn_dt"
+        ]
+      }
+    },
+    {
+      "id": "Q014",
+      "category": "paraphrase",
+      "query": "radiology report findings and impression",
+      "gold": {
+        "primary_tables": ["public.tb_img_rpt"],
+        "acceptable_tables": ["public.tb_img_ord"],
+        "relevant_columns": [
+          "public.tb_img_rpt.find_txt",
+          "public.tb_img_rpt.impr_txt"
+        ]
+      }
+    },
+    {
+      "id": "Q015",
+      "category": "paraphrase",
+      "query": "inpatient admission ward history",
+      "gold": {
+        "primary_tables": ["public.tb_adm_hist"],
+        "acceptable_tables": ["public.tb_ward_mst", "public.tb_enc_hist"],
+        "relevant_columns": [
+          "public.tb_adm_hist.ward_cd",
+          "public.tb_adm_hist.adm_dt"
+        ]
+      }
+    },
+    {
+      "id": "Q016",
+      "category": "paraphrase",
+      "query": "discharge summary clinical document",
+      "gold": {
+        "primary_tables": ["public.tb_cln_doc"],
+        "acceptable_tables": ["public.tb_doc_type"],
+        "relevant_columns": [
+          "public.tb_cln_doc.doc_body",
+          "public.tb_cln_doc.doc_ttl",
+          "public.tb_cln_doc.doc_typ_cd"
+        ]
+      }
+    },
+    {
+      "id": "Q017",
+      "category": "schema_semantic",
+      "query": "검사결과값이 저장된 컬럼",
+      "gold": {
+        "primary_tables": ["public.tb_lab_rst"],
+        "relevant_columns": [
+          "public.tb_lab_rst.rst_val",
+          "public.tb_lab_rst.rst_num"
+        ]
+      }
+    },
+    {
+      "id": "Q018",
+      "category": "schema_semantic",
+      "query": "환자 이름이 들어있는 컬럼",
+      "gold": {
+        "primary_tables": ["public.tb_pt_mst"],
+        "relevant_columns": ["public.tb_pt_mst.pt_nm"]
+      }
+    },
+    {
+      "id": "Q019",
+      "category": "schema_semantic",
+      "query": "처방 용량(dose) 컬럼은 어디인가",
+      "gold": {
+        "primary_tables": ["public.tb_med_ord"],
+        "relevant_columns": ["public.tb_med_ord.dose_val"]
+      }
+    },
+    {
+      "id": "Q020",
+      "category": "schema_semantic",
+      "query": "진단일이 저장된 컬럼",
+      "gold": {
+        "primary_tables": ["public.tb_dgn_hist"],
+        "relevant_columns": ["public.tb_dgn_hist.dgn_dt"]
+      }
+    },
+    {
+      "id": "Q021",
+      "category": "schema_semantic",
+      "query": "영상 판독문 소견/결론 텍스트 컬럼",
+      "gold": {
+        "primary_tables": ["public.tb_img_rpt"],
+        "relevant_columns": [
+          "public.tb_img_rpt.find_txt",
+          "public.tb_img_rpt.impr_txt"
+        ]
+      }
+    },
+    {
+      "id": "Q022",
+      "category": "schema_semantic",
+      "query": "임상문서 본문 컬럼",
+      "gold": {
+        "primary_tables": ["public.tb_cln_doc"],
+        "relevant_columns": ["public.tb_cln_doc.doc_body"]
+      }
+    },
+    {
+      "id": "Q023",
+      "category": "schema_semantic",
+      "query": "encounter type 컬럼",
+      "gold": {
+        "primary_tables": ["public.tb_enc_hist"],
+        "relevant_columns": ["public.tb_enc_hist.enc_typ"]
+      }
+    },
+    {
+      "id": "Q024",
+      "category": "schema_semantic",
+      "query": "검사코드와 검사명 마스터 컬럼",
+      "gold": {
+        "primary_tables": ["public.tb_lab_mst"],
+        "relevant_columns": [
+          "public.tb_lab_mst.exm_cd",
+          "public.tb_lab_mst.exm_nm"
+        ]
+      }
+    },
+    {
+      "id": "Q025",
+      "category": "physical_identifier",
+      "query": "tb_lab_rst",
+      "gold": {
+        "primary_tables": ["public.tb_lab_rst"]
+      }
+    },
+    {
+      "id": "Q026",
+      "category": "physical_identifier",
+      "query": "tb_med_ord",
+      "gold": {
+        "primary_tables": ["public.tb_med_ord"]
+      }
+    },
+    {
+      "id": "Q027",
+      "category": "physical_identifier",
+      "query": "exm_cd",
+      "gold": {
+        "primary_tables": ["public.tb_lab_rst", "public.tb_lab_mst"],
+        "acceptable_tables": ["public.tb_lab_ord"],
+        "relevant_columns": [
+          "public.tb_lab_rst.exm_cd",
+          "public.tb_lab_mst.exm_cd"
+        ]
+      }
+    },
+    {
+      "id": "Q028",
+      "category": "physical_identifier",
+      "query": "pt_no",
+      "gold": {
+        "primary_tables": ["public.tb_pt_mst"],
+        "acceptable_tables": [
+          "public.tb_lab_rst",
+          "public.tb_med_ord",
+          "public.tb_enc_hist",
+          "public.tb_dgn_hist",
+          "public.tb_adm_hist"
+        ],
+        "relevant_columns": [
+          "public.tb_pt_mst.pt_no",
+          "public.tb_lab_rst.pt_no",
+          "public.tb_med_ord.pt_no"
+        ]
+      }
+    },
+    {
+      "id": "Q029",
+      "category": "physical_identifier",
+      "query": "tb_dgn_hist",
+      "gold": {
+        "primary_tables": ["public.tb_dgn_hist"]
+      }
+    },
+    {
+      "id": "Q030",
+      "category": "physical_identifier",
+      "query": "rst_val",
+      "gold": {
+        "primary_tables": ["public.tb_lab_rst"],
+        "relevant_columns": ["public.tb_lab_rst.rst_val"]
+      }
+    },
+    {
+      "id": "Q031",
+      "category": "ambiguous",
+      "query": "검사결과",
+      "gold": {
+        "primary_tables": ["public.tb_lab_rst"],
+        "acceptable_tables": ["public.tb_lab_mst", "public.tb_lab_ord", "public.tb_img_rpt"]
+      }
+    },
+    {
+      "id": "Q032",
+      "category": "ambiguous",
+      "query": "진단",
+      "gold": {
+        "primary_tables": ["public.tb_dgn_hist"],
+        "acceptable_tables": ["public.tb_dgn_cd_mst"]
+      }
+    },
+    {
+      "id": "Q033",
+      "category": "ambiguous",
+      "query": "임상문서",
+      "gold": {
+        "primary_tables": ["public.tb_cln_doc"],
+        "acceptable_tables": ["public.tb_doc_type"]
+      }
+    },
+    {
+      "id": "Q034",
+      "category": "ambiguous",
+      "query": "encounter",
+      "gold": {
+        "primary_tables": ["public.tb_enc_hist"],
+        "acceptable_tables": ["public.tb_adm_hist"]
+      }
+    },
+    {
+      "id": "Q035",
+      "category": "ambiguous",
+      "query": "처방",
+      "gold": {
+        "primary_tables": ["public.tb_med_ord"],
+        "acceptable_tables": [
+          "public.tb_ord_hdr",
+          "public.tb_ord_dtl",
+          "public.tb_lab_ord",
+          "public.tb_img_ord"
+        ]
+      }
+    },
+    {
+      "id": "Q036",
+      "category": "ambiguous",
+      "query": "환자",
+      "gold": {
+        "primary_tables": ["public.tb_pt_mst"],
+        "acceptable_tables": ["public.tb_enc_hist"]
+      }
+    },
+    {
+      "id": "Q037",
+      "category": "relation",
+      "query": "검사결과와 검사마스터 관계",
+      "gold": {
+        "primary_tables": ["public.tb_lab_rst"],
+        "relation_tables": ["public.tb_lab_mst"],
+        "relevant_columns": [
+          "public.tb_lab_rst.exm_cd",
+          "public.tb_lab_mst.exm_cd"
+        ],
+        "gold_relation_paths": [
+          ["public.tb_lab_rst", "public.tb_lab_mst"]
+        ]
+      }
+    },
+    {
+      "id": "Q038",
+      "category": "relation",
+      "query": "처방약품과 약품마스터 join",
+      "gold": {
+        "primary_tables": ["public.tb_med_ord"],
+        "relation_tables": ["public.tb_drug_mst"],
+        "relevant_columns": [
+          "public.tb_med_ord.drug_cd",
+          "public.tb_drug_mst.drug_cd"
+        ],
+        "gold_relation_paths": [
+          ["public.tb_med_ord", "public.tb_drug_mst"]
+        ]
+      }
+    },
+    {
+      "id": "Q039",
+      "category": "relation",
+      "query": "진단이력과 진단코드 마스터",
+      "gold": {
+        "primary_tables": ["public.tb_dgn_hist"],
+        "relation_tables": ["public.tb_dgn_cd_mst"],
+        "relevant_columns": [
+          "public.tb_dgn_hist.dgn_cd",
+          "public.tb_dgn_cd_mst.dgn_cd"
+        ],
+        "gold_relation_paths": [
+          ["public.tb_dgn_hist", "public.tb_dgn_cd_mst"]
+        ]
+      }
+    },
+    {
+      "id": "Q040",
+      "category": "relation",
+      "query": "입원기록과 병동마스터",
+      "gold": {
+        "primary_tables": ["public.tb_adm_hist"],
+        "relation_tables": ["public.tb_ward_mst"],
+        "relevant_columns": [
+          "public.tb_adm_hist.ward_cd",
+          "public.tb_ward_mst.ward_cd"
+        ],
+        "gold_relation_paths": [
+          ["public.tb_adm_hist", "public.tb_ward_mst"]
+        ]
+      }
+    },
+    {
+      "id": "Q041",
+      "category": "relation",
+      "query": "영상판독과 영상오더 관계",
+      "gold": {
+        "primary_tables": ["public.tb_img_rpt"],
+        "relation_tables": ["public.tb_img_ord"],
+        "gold_relation_paths": [
+          ["public.tb_img_rpt", "public.tb_img_ord"]
+        ]
+      }
+    },
+    {
+      "id": "Q042",
+      "category": "relation",
+      "query": "임상문서와 문서유형 마스터",
+      "gold": {
+        "primary_tables": ["public.tb_cln_doc"],
+        "relation_tables": ["public.tb_doc_type"],
+        "relevant_columns": ["public.tb_cln_doc.doc_typ_cd"],
+        "gold_relation_paths": [
+          ["public.tb_cln_doc", "public.tb_doc_type"]
+        ]
+      }
+    },
+    {
+      "id": "Q043",
+      "category": "relation",
+      "query": "검사결과와 검사오더 연결",
+      "gold": {
+        "primary_tables": ["public.tb_lab_rst"],
+        "relation_tables": ["public.tb_lab_ord"],
+        "relevant_columns": ["public.tb_lab_rst.lab_ord_id"],
+        "gold_relation_paths": [
+          ["public.tb_lab_rst", "public.tb_lab_ord"]
+        ]
+      }
+    },
+    {
+      "id": "Q044",
+      "category": "relation",
+      "query": "오더헤더와 오더상세",
+      "gold": {
+        "primary_tables": ["public.tb_ord_hdr"],
+        "relation_tables": ["public.tb_ord_dtl"],
+        "relevant_columns": [
+          "public.tb_ord_hdr.ord_no",
+          "public.tb_ord_hdr.ord_typ"
+        ],
+        "gold_relation_paths": [
+          ["public.tb_ord_hdr", "public.tb_ord_dtl"]
+        ]
+      }
+    },
+    {
+      "id": "Q045",
+      "category": "relation",
+      "query": "진단이력과 encounter",
+      "gold": {
+        "primary_tables": ["public.tb_dgn_hist"],
+        "relation_tables": ["public.tb_enc_hist"],
+        "relevant_columns": [
+          "public.tb_dgn_hist.pt_no",
+          "public.tb_enc_hist.enc_id"
+        ],
+        "gold_relation_paths": [
+          ["public.tb_dgn_hist", "public.tb_enc_hist"]
+        ]
+      }
+    }
+  ]
+}
