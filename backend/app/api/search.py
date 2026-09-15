@@ -6,6 +6,7 @@ from fastapi import APIRouter, HTTPException
 
 from app.core.config import get_settings
 from app.db.session import get_catalog_session_factory
+from app.embeddings.factory import get_runtime_embedding_provider
 from app.schemas.search_api import (
     DirectResultOut,
     QueryInfo,
@@ -25,7 +26,15 @@ def search_schema(body: SchemaSearchRequest) -> SchemaSearchResponse:
     settings = get_settings()
     session = get_catalog_session_factory()()
     try:
-        service = SchemaSearchService(session, settings=settings)
+        mode = (body.mode or "hybrid").strip().lower()
+        # Reuse process-lifetime provider for semantic/hybrid so KoE5 (etc.)
+        # model weights stay loaded across requests. Keyword-only skips this.
+        provider = (
+            get_runtime_embedding_provider()
+            if mode in {"semantic", "hybrid"}
+            else None
+        )
+        service = SchemaSearchService(session, settings=settings, provider=provider)
         result = service.search(
             query=body.query,
             mode=body.mode,
