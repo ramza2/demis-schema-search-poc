@@ -5,6 +5,7 @@ from __future__ import annotations
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
+from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
@@ -45,7 +46,13 @@ def create_app() -> FastAPI:
                     status_code=400,
                     content={"detail": HOST_VALIDATION_MESSAGE},
                 )
-        return JSONResponse(status_code=422, content={"detail": exc.errors()})
+        # Match FastAPI's default validation handler behavior: Pydantic v2 may
+        # include non-JSON-serializable objects (for example ValueError) under
+        # ctx.error for model-validator failures.
+        return JSONResponse(
+            status_code=422,
+            content={"detail": jsonable_encoder(exc.errors())},
+        )
 
     @app.get("/")
     def root() -> dict[str, str]:
