@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from functools import lru_cache
+
 from app.core.config import Settings, get_settings
 from app.embeddings.base import EmbeddingProvider
 from app.embeddings.errors import ConfigurationError
@@ -80,3 +82,21 @@ def get_embedding_provider(settings: Settings | None = None) -> EmbeddingProvide
         f"Unknown EMBEDDING_PROVIDER={provider!r}. "
         "Supported values: fake, bge_m3, openai_compatible, koe5"
     )
+
+
+@lru_cache(maxsize=1)
+def get_runtime_embedding_provider() -> EmbeddingProvider:
+    """Process-lifetime cached provider for the global runtime settings.
+
+    Uses ``get_settings()`` (also process-cached) so the heavy SentenceTransformer
+    load for providers like KoE5 happens once per backend process. Do not pass a
+    ``Settings`` instance as an ``lru_cache`` key — call ``get_embedding_provider``
+    directly when a specific settings object is required (tests / one-off jobs).
+    """
+    return get_embedding_provider(get_settings())
+
+
+def clear_runtime_embedding_provider_cache() -> None:
+    """Drop the runtime provider cache (tests / settings reload)."""
+    get_runtime_embedding_provider.cache_clear()
+

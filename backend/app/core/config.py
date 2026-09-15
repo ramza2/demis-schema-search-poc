@@ -166,3 +166,20 @@ class Settings(BaseSettings):
 @lru_cache
 def get_settings() -> Settings:
     return Settings()
+
+
+_clear_settings_lru = get_settings.cache_clear
+
+
+def _clear_settings_cache() -> None:
+    """Clear settings cache and the process-lifetime embedding provider cache."""
+    _clear_settings_lru()
+    # Lazy import avoids a config↔embeddings import cycle at module load.
+    from app.embeddings.factory import clear_runtime_embedding_provider_cache
+
+    clear_runtime_embedding_provider_cache()
+
+
+# Existing tests mutate env then call ``get_settings.cache_clear()``; also drop
+# the runtime embedding provider so a new Settings snapshot is used on search.
+get_settings.cache_clear = _clear_settings_cache  # type: ignore[method-assign]
