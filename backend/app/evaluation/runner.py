@@ -10,7 +10,6 @@ import argparse
 import hashlib
 import os
 import platform
-import subprocess
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -41,6 +40,12 @@ from app.evaluation.report import (
     summarize_rows,
     write_outputs,
 )
+from app.evaluation.reproducibility import (
+    assert_run_metadata,
+    resolve_git_commit,
+    resolve_model_artifact_sha256,
+    resolve_model_revision,
+)
 from app.services.search.search_service import SchemaSearchService, SearchError
 from app.services.search.semantic import embedding_count
 from app.services.search.terminology import clear_concept_cache, get_concepts
@@ -53,21 +58,6 @@ class OfficialEvaluationError(RuntimeError):
     pass
 
 
-def _git_sha() -> str | None:
-    try:
-        return (
-            subprocess.check_output(
-                ["git", "rev-parse", "HEAD"],
-                cwd=str(Path(__file__).resolve().parents[3]),
-                stderr=subprocess.DEVNULL,
-                text=True,
-            ).strip()
-            or None
-        )
-    except Exception:  # noqa: BLE001
-        return None
-
-
 def _dict_hash() -> str:
     clear_concept_cache()
     concepts = get_concepts()
@@ -77,7 +67,7 @@ def _dict_hash() -> str:
     return hashlib.sha256(blob.encode("utf-8")).hexdigest()
 
 
-def _schema_fingerprint(session) -> str | None:
+def _schema_fingerprint(session) -> str:
     try:
         from sqlalchemy import text
 
@@ -87,10 +77,12 @@ def _schema_fingerprint(session) -> str | None:
                 "WHERE status = 'SUCCESS'"
             )
         ).scalar()
-        return str(row) if row else None
-    except Exception:  # noqa: BLE001
-        return None
-
+        value = str(row or "").strip()
+        if value:
+            return value
+        return "unavailable: no successful analysis fingerprint"
+    except Exception as exc:  # noqa: BLE001
+        return f"unavailable: {type(exc).__name__}"
 
 def assert_official_provider(settings: Settings) -> None:
     provider = (settings.embedding_provider or "").strip().lower()
@@ -257,10 +249,14 @@ def run_evaluation(
 
         metadata = {
             "executed_at": datetime.now(timezone.utc).isoformat(),
-            "git_commit": _git_sha(),
+            "git_commit": resolve_git_commit(),
             "model_name": settings.embedding_model_name,
             "model_key": model_key,
-            "model_revision": settings.embedding_model_revision,
+            "model_revision": resolve_model_revision(settings),
+            "model_artifact_sha256": resolve_model_artifact_sha256(settings),
+            "embedding_model_path_configured": bool(
+                (settings.embedding_model_path or "").strip()
+            ),
             "embedding_dimension": settings.embedding_dimension,
             "normalize": settings.embedding_normalize,
             "max_seq_length": settings.embedding_max_seq_length,
@@ -282,6 +278,7 @@ def run_evaluation(
             "warmup": warmup,
             "allow_fake": allow_fake,
         }
+        assert_run_metadata(metadata)
 
         write_outputs(
             output_dir,
