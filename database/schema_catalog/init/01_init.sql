@@ -4,9 +4,7 @@
 -- ============================================================
 
 CREATE EXTENSION IF NOT EXISTS "pgcrypto";
-
--- Placeholder for future pgvector (safe if image supports it)
--- CREATE EXTENSION IF NOT EXISTS vector;
+CREATE EXTENSION IF NOT EXISTS vector;
 
 CREATE TABLE IF NOT EXISTS catalog_meta (
     meta_key     VARCHAR(100) PRIMARY KEY,
@@ -22,8 +20,8 @@ COMMENT ON COLUMN catalog_meta.updated_at IS '갱신일시';
 INSERT INTO catalog_meta (meta_key, meta_value)
 VALUES
     ('poc_name', 'DEMIS Schema Semantic Search PoC'),
-    ('current_step', 'Step 2 - Schema Analyzer / Schema Catalog'),
-    ('schema_version', '0.2.0')
+    ('current_step', 'Step 3 - CPU-only Embedding Pipeline + pgvector'),
+    ('schema_version', '0.3.0')
 ON CONFLICT (meta_key) DO UPDATE
 SET meta_value = EXCLUDED.meta_value,
     updated_at = CURRENT_TIMESTAMP;

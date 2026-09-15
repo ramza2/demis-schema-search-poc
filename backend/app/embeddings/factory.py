@@ -1,0 +1,42 @@
+"""Factory for embedding providers."""
+
+from __future__ import annotations
+
+from app.core.config import Settings, get_settings
+from app.embeddings.base import EmbeddingProvider
+from app.embeddings.fake import FakeEmbeddingProvider
+
+
+def get_embedding_provider(settings: Settings | None = None) -> EmbeddingProvider:
+    cfg = settings or get_settings()
+    provider = (cfg.embedding_provider or "bge_m3").strip().lower()
+
+    if provider == "fake":
+        return FakeEmbeddingProvider(
+            dimension=cfg.embedding_dimension,
+            normalize=cfg.embedding_normalize,
+            model_name="fake-embedding",
+            model_key=(
+                f"fake-embedding|rev=default|dim={cfg.embedding_dimension}"
+                f"|norm={'true' if cfg.embedding_normalize else 'false'}"
+                f"|maxlen={cfg.embedding_max_seq_length}"
+            ),
+            max_seq_length=cfg.embedding_max_seq_length,
+        )
+
+    # Lazy import so health / non-embedding paths do not require torch.
+    from app.embeddings.bge_m3 import BgeM3EmbeddingProvider
+
+    return BgeM3EmbeddingProvider(
+        model_name=cfg.embedding_model_name,
+        model_path=cfg.embedding_model_path,
+        model_revision=cfg.embedding_model_revision,
+        device=cfg.embedding_device,
+        dimension=cfg.embedding_dimension,
+        batch_size=cfg.embedding_batch_size,
+        max_seq_length=cfg.embedding_max_seq_length,
+        normalize=cfg.embedding_normalize,
+        num_threads=cfg.embedding_num_threads,
+        hf_hub_offline=cfg.hf_hub_offline,
+        model_key=cfg.build_model_key(),
+    )

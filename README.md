@@ -4,190 +4,215 @@
 
 ## 1. 현재 Step
 
-**Step 2 — Schema Analyzer + Schema Catalog**
+**Step 3 — CPU-only Embedding Pipeline + pgvector**
 
-분석 대상 의료 DB(`medical_demo`)에 연결하여 Schema Metadata를 자동 수집하고,
-`schema_catalog` DB에 구조화 저장합니다.
+Raw Schema Catalog를 기반으로 deterministic Search Document를 만들고,
+CPU-only BGE-M3(또는 Fake Provider)로 Embedding을 생성하여 `schema_catalog`의 pgvector 컬럼에 저장합니다.
 
-이번 Step에서는 Embedding / pgvector / Semantic Search / LLM을 구현하지 않습니다.
+이번 Step에서는 Semantic Search / Keyword Search / Hybrid Search / 자연어 검색 UI를 구현하지 않습니다.
 
-## 2. Schema Analyzer Architecture
+## 2. Step 3 Architecture
 
 ```text
-medical-db (medical_demo)
-   │
-   │ metadata SELECT only
-   ▼
-PostgreSQLSchemaInspector
+medical-db
+   ↓ metadata only
+
+Schema Analyzer
    ↓
-SchemaAnalysisService
+
+Raw Schema Catalog
    ↓
-Normalize / Fingerprint
+
+SearchDocumentBuilder
    ↓
-CatalogWriter (upsert)
+
+catalog_search_document
    ↓
-catalog-db (schema_catalog)
+
+BgeM3EmbeddingProvider (CPU-only) / FakeEmbeddingProvider
+   ↓
+
+catalog_embedding
+VECTOR(1024)
 ```
 
-- Source DB(`medical_demo`): Schema Metadata 조회만 수행 (INSERT/UPDATE/DELETE/DDL 금지)
-- Catalog DB(`schema_catalog`): 분석 결과 Read/Write
-- DBMS Adapter는 `SchemaInspector` 인터페이스로 분리되어 있으며, 현재는 PostgreSQL 구현만 제공합니다.
+원칙:
 
-## 3. Source DB vs Catalog DB
+- Raw Catalog는 Source of Truth
+- Search Document / Embedding은 언제든 재생성 가능한 Derived Data
+- Generative LLM 사용 금지 (Embedding 모델만 허용)
+- Schema Metadata만 Embedding (환자 Row / Seed 업무 데이터 제외)
 
-| 구분 | medical_demo | schema_catalog |
-|------|--------------|----------------|
-| 역할 | 분석 대상 Mock 의료 DB | Schema Catalog 저장소 |
-| Analyzer 권한 | SELECT(metadata) only | INSERT/UPDATE |
-| Password 저장 | 환경변수만 사용 | Catalog Table에 평문 저장 금지 |
+## 3. Search Document
 
-## 4. 수집 Metadata
+| Object Type | 포함 내용 |
+|------------|-----------|
+| TABLE | schema/table/comment, columns+comments, PK, UNIQUE, FK |
+| COLUMN | parent table/comment, column/comment/type, PK/UNIQUE, FK target |
 
-- Database / Schema / 분석 실행시간
-- Table: schema, name, type, comment
-- Column: ordinal, name, type, length/precision/scale, nullable, default, comment
-- Primary Key / Unique Constraint (composite 순서 포함)
-- Foreign Key (composite mapping 포함)
-- Index: name, unique, method, definition, columns
+Natural Key 예:
 
-Search Enrichment(`searchable_text`, synonym, embedding 등)는 생성하지 않습니다.
-Comment를 AI/Rule로 보강하지 않으며, 대상 DB에서 읽은 원본을 보존합니다.
+- `table:{source_id}:{schema}:{table}`
+- `column:{source_id}:{schema}:{table}:{column}`
 
-## 5. Catalog 데이터 모델
+동일 Catalog로 rebuild하면 동일 `searchable_text` / `document_fingerprint`가 나와야 합니다.
 
-| Table | 역할 |
-|-------|------|
-| `catalog_source` | 분석 대상 Source 등록(비민감 연결 메타만) |
-| `catalog_analysis_run` | 분석 실행 이력 |
-| `catalog_table` | Table 메타 + fingerprint / active |
-| `catalog_column` | Column 메타 + PK 구성 여부 / 단독 unique 여부 |
-| `catalog_key_constraint` | PRIMARY KEY / UNIQUE Constraint 본체 |
-| `catalog_key_constraint_column` | Constraint 컬럼 + ordinal(복합키 순서) |
-| `catalog_relation` | FK Relationship |
-| `catalog_relation_column` | Composite FK column mapping |
-| `catalog_index` | Index 메타 |
-| `catalog_index_column` | Index column 순서 |
+## 4. Embedding Model (CPU-only)
 
-### Key / Unique / Relation 정합성
+기본 설정:
 
-- PK·UNIQUE는 `catalog_key_constraint`(+ column ordinal)에 별도 보존합니다.
-- `catalog_column.is_primary_key`: PK 구성 컬럼 여부(복합 PK 포함).
-- `catalog_column.is_unique`: **해당 컬럼이 단독으로 unique인 경우만 true**.  
-  복합 PK/UNIQUE 구성 컬럼은 false입니다.
-- FK Natural Key: `(source_table_id, constraint_name)`  
-  (서로 다른 Table에서 동일 constraint_name 사용 가능)
-- 내부 매핑 키는 `(schema_name, table_name)`을 사용합니다.
+```env
+EMBEDDING_PROVIDER=bge_m3   # 또는 fake
+EMBEDDING_MODEL_NAME=BAAI/bge-m3
+EMBEDDING_DEVICE=cpu
+EMBEDDING_DIMENSION=1024
+EMBEDDING_BATCH_SIZE=8
+EMBEDDING_MAX_SEQ_LENGTH=1024
+EMBEDDING_NORMALIZE=true
+```
 
-### 현재 제한사항
+Offline / 폐쇄망:
 
-- 기본 분석 대상은 `public` 단일 Schema입니다.
-- 여러 Schema 동시 분석 / Cross-schema FK 완전 지원은 아직 구현하지 않았습니다.
+```env
+EMBEDDING_MODEL_PATH=/models/local/bge-m3
+HF_HUB_OFFLINE=true
+```
 
-Migration은 PoC 규모를 고려해 **init SQL + ORM `create_all` bootstrap**(기존 volume용 FK unique 키 보정 포함)을 사용합니다.
-Alembic은 도입하지 않았습니다(향후 모델 변경이 잦아지면 재검토).
+모델 선택 우선순위:
 
-## 6. API
+1. `EMBEDDING_MODEL_PATH`가 유효하면 Local Path
+2. 그렇지 않으면 `EMBEDDING_MODEL_NAME`
+
+모델 파일은 Git에 커밋하지 않습니다 (`models/`, `model-cache/`는 `.gitignore`).
+
+Dockerfile은 **CPU-only torch 2.6+** 를 설치합니다.  
+(transformers가 `.bin` 체크포인트 로드 시 CVE-2025-32434 대응으로 torch>=2.6을 요구하기 때문입니다.  
+`model.safetensors`가 있으면 torch 2.5에서도 로드 가능합니다.)
+
+### 모델 다운로드
+
+Backend 시작 시 자동 다운로드하지 않습니다 (lazy load).
+
+```bash
+# host에서 다운로드 후 ./models 를 컨테이너에 마운트 (/models/local)
+mkdir -p models
+cd backend && python scripts/download_embedding_model.py --output ../models/bge-m3
+
+# (권장) safetensors 변환 — 컨테이너 네트워크가 막혀 torch를 올리지 못할 때 유용
+python - <<'PY'
+from transformers import AutoModel
+AutoModel.from_pretrained("../models/bge-m3", local_files_only=True).save_pretrained(
+    "../models/bge-m3", safe_serialization=True
+)
+PY
+
+# 또는 컨테이너 내부(외부망 가능 시)
+docker compose exec backend python scripts/download_embedding_model.py --output /models/local/bge-m3
+```
+
+Offline 실행 예:
+
+```bash
+EMBEDDING_PROVIDER=bge_m3 \
+EMBEDDING_MODEL_PATH=/models/local/bge-m3 \
+HF_HUB_OFFLINE=1 \
+docker compose up backend
+```
+
+## 5. API
 
 | Method | Path | 설명 |
 |--------|------|------|
-| POST | `/api/v1/schema/analyze` | medical_demo Schema 분석 후 Catalog 적재 |
-| GET | `/api/v1/schema/runs` | 최근 분석 실행 이력 |
-| GET | `/api/v1/schema/runs/{run_id}` | 분석 실행 상세 |
-| GET | `/api/v1/schema/tables` | Catalog Table 목록 (`schema_name`, `active`, `name`) |
-| GET | `/api/v1/schema/tables/{table_id}` | Table 상세(Column/PK/FK/Index/관계) |
-| GET | `/health` | Backend / DB 연결 상태 |
+| POST | `/api/v1/schema/analyze` | Schema Analyze (Embedding 자동 실행 없음) |
+| POST | `/api/v1/embeddings/documents/rebuild` | Search Document 생성/갱신 |
+| POST | `/api/v1/embeddings/run` | active document Embedding |
+| GET | `/api/v1/embeddings/runs` | Embedding Run 이력 |
+| GET | `/api/v1/embeddings/runs/{run_id}` | Run 상세 |
+| GET | `/api/v1/embeddings/stats` | document/embedding/stale 통계 |
+| GET | `/api/v1/embeddings/documents` | Search Document 목록 |
+| GET | `/api/v1/embeddings/documents/{id}` | Search Document 상세 |
 
-분석 실행 예:
+검색 Query API (`/search`, `/semantic-search`, `/query`)는 Step 4 범위입니다.
 
-```bash
-curl -X POST http://localhost:8000/api/v1/schema/analyze
-```
+### Incremental Embedding
 
-응답 예:
+동일 `model_key` + 동일 `document_fingerprint`이면 skip 합니다.
 
-```json
-{
-  "run_id": 1,
-  "status": "SUCCESS",
-  "source": "medical_demo",
-  "schema": "public",
-  "tables": 24,
-  "columns": 180,
-  "relations": 50,
-  "indexes": 40,
-  "schema_fingerprint": "...",
-  "started_at": "...",
-  "finished_at": "..."
-}
-```
-
-## 7. Credential 관리 원칙
-
-- Password는 Catalog Table에 저장하지 않습니다.
-- Password는 API Response / 로그 / 예외 메시지에 노출하지 않습니다.
-- DB Connection URL 전체를 로그로 남기지 않습니다.
-- Source 접속정보는 환경변수(`MEDICAL_DB_*`, `CATALOG_DB_*`)를 사용합니다.
-
-## 8. Docker Compose 실행
+## 6. Docker Compose
 
 ```bash
 cp .env.example .env
+mkdir -p models
 docker compose up --build
 ```
 
 서비스:
 
-- `medical-db` :5433 (host debug)
-- `catalog-db` :5434
-- `backend` :8000
-- `frontend` :8501
+- medical-db :5433
+- catalog-db :5434 (pgvector)
+- backend :8000
+- frontend :8501
 
-컨테이너 간 연결은 Compose service DNS를 사용합니다.
-
-## 9. 테스트
+Compose 기본 `EMBEDDING_PROVIDER=fake` (빠른 기동/CI용).
+실제 BGE-M3:
 
 ```bash
-docker compose exec backend pytest -q
-# 또는
-bash scripts/run_tests.sh
+EMBEDDING_PROVIDER=bge_m3 docker compose up --build backend
 ```
 
-검증 항목:
+## 7. 테스트
 
-- Step 1 기존 Health / PK/FK / Seed / Comment 테스트
-- Schema Inspector Table/Column/PK/FK/Index 수집
-- Catalog 적재 및 Idempotency
-- Fingerprint 안정성
-- Analysis Run / Table Detail API
-- Credential 비노출
+```bash
+# Fake Provider 기반 (기본, 모델 다운로드 없음)
+bash scripts/run_tests.sh
 
-## 10. 현재 미구현 범위
+# 또는
+docker compose exec -e EMBEDDING_PROVIDER=fake backend pytest -q
+```
 
-- sentence-transformers / BGE-M3 / Embedding
-- pgvector / vector column / cosine similarity
-- Semantic / Keyword Hybrid Search
-- Synonym / Query Expansion
-- Relation Expansion 검색
-- LLM / 자연어 → SQL / Dynamic SQL
-- Schema Change Diff UI / 알림
-- Streamlit Schema Explorer (Step 5)
+실제 BGE-M3 smoke (선택):
 
-## 11. 이후 Step 3 계획
+```bash
+# 로컬 모델이 ./models/bge-m3 에 있어야 합니다.
+docker compose exec \
+  -e EMBEDDING_PROVIDER=bge_m3 \
+  -e EMBEDDING_MODEL_PATH=/models/local/bge-m3 \
+  -e HF_HUB_OFFLINE=1 \
+  -e RUN_BGE_M3_SMOKE=1 \
+  backend pytest -q tests/test_bge_m3_smoke.py -s
+```
 
-CPU-only Embedding Pipeline + PostgreSQL/pgvector:
+## 8. pgvector
 
-1. Catalog Metadata 기반 searchable text 생성(원본 Comment 보존 + 파생 필드 분리)
-2. CPU Embedding 모델 로컬 적재
-3. `schema_catalog`에 vector 컬럼/인덱스 추가
-4. Embedding batch job 및 재분석 시 갱신 전략
+- Extension: `CREATE EXTENSION IF NOT EXISTS vector;`
+- Fresh volume: init SQL
+- Existing volume: backend bootstrap에서도 안전하게 활성화
+- Dimension: VECTOR(1024)
+- HNSW/IVFFlat index는 Step 4에서 검토
 
-## 12. 전체 PoC Roadmap
+## 9. 현재 제한사항
+
+- Semantic / Keyword / Hybrid Search 미구현
+- FK Relation Expansion 검색 미구현
+- Synonym Dictionary / Query Expansion 미구현
+- 자연어 검색 UI 미구현
+- Generative LLM / NL→SQL 미사용
+
+## 10. Step 4 제안
+
+1. Semantic Search (query embedding + cosine similarity)
+2. Keyword Search
+3. Synonym Query Expansion
+4. Hybrid Ranking (RRF 등)
+5. FK Relation Expansion
+
+## Roadmap
 
 | Step | 내용 | 상태 |
 |------|------|------|
 | 1 | Foundation + Mock Medical DB | 완료 |
-| 2 | Schema Analyzer + Schema Catalog | **현재** |
-| 3 | CPU-only Embedding + pgvector | 예정 |
+| 2 | Schema Analyzer + Schema Catalog | 완료 |
+| 3 | CPU-only Embedding + pgvector | **현재** |
 | 4 | Hybrid Search + FK Expansion | 예정 |
 | 5 | Streamlit Schema Explorer | 예정 |
 | 6 | 정확도 평가 / Schema Change Detection | 예정 |

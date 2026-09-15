@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
+from pgvector.sqlalchemy import Vector
 from sqlalchemy import (
     BigInteger,
     Boolean,
@@ -228,3 +229,73 @@ class CatalogIndexColumn(CatalogBase):
     column_name: Mapped[str] = mapped_column(String(200), nullable=False)
 
     index: Mapped[CatalogIndex] = relationship(back_populates="columns")
+
+
+class CatalogSearchDocument(CatalogBase):
+    """Derived search document built from raw catalog metadata."""
+
+    __tablename__ = "catalog_search_document"
+    __table_args__ = (UniqueConstraint("document_key"),)
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    source_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("catalog_source.id"), nullable=False)
+    object_type: Mapped[str] = mapped_column(String(20), nullable=False)  # TABLE | COLUMN
+    table_id: Mapped[int | None] = mapped_column(BigInteger, ForeignKey("catalog_table.id", ondelete="SET NULL"))
+    column_id: Mapped[int | None] = mapped_column(BigInteger, ForeignKey("catalog_column.id", ondelete="SET NULL"))
+    document_key: Mapped[str] = mapped_column(String(512), nullable=False)
+    searchable_text: Mapped[str] = mapped_column(Text, nullable=False)
+    source_fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
+    document_fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
+    builder_version: Mapped[str] = mapped_column(String(40), nullable=False)
+    active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    first_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    last_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+    last_run_id: Mapped[int | None] = mapped_column(BigInteger)
+
+    embeddings: Mapped[list[CatalogEmbedding]] = relationship(
+        back_populates="search_document", cascade="all, delete-orphan"
+    )
+
+
+class CatalogEmbeddingRun(CatalogBase):
+    __tablename__ = "catalog_embedding_run"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    source_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("catalog_source.id"), nullable=False)
+    status: Mapped[str] = mapped_column(String(20), nullable=False)
+    model_key: Mapped[str] = mapped_column(String(512), nullable=False)
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    document_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    embedded_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    skipped_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    failed_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    error_message: Mapped[str | None] = mapped_column(Text)
+    error_code: Mapped[str | None] = mapped_column(String(80))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class CatalogEmbedding(CatalogBase):
+    __tablename__ = "catalog_embedding"
+    __table_args__ = (UniqueConstraint("search_document_id", "model_key"),)
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    search_document_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("catalog_search_document.id", ondelete="CASCADE"), nullable=False
+    )
+    model_key: Mapped[str] = mapped_column(String(512), nullable=False)
+    model_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    model_revision: Mapped[str | None] = mapped_column(String(120))
+    dimension: Mapped[int] = mapped_column(Integer, nullable=False)
+    normalized: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    document_fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
+    embedding: Mapped[list[float]] = mapped_column(Vector(1024), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+    search_document: Mapped[CatalogSearchDocument] = relationship(back_populates="embeddings")

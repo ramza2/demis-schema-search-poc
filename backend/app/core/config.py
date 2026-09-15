@@ -3,15 +3,26 @@
 from __future__ import annotations
 
 from functools import lru_cache
+from pathlib import Path
+from typing import Any
 
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+def _empty_as_none(value: Any) -> Any:
+    if value is None:
+        return None
+    if isinstance(value, str) and value.strip() == "":
+        return None
+    return value
 
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
     app_name: str = "DEMIS Schema Semantic Search PoC"
-    current_step: str = "Step 2 - Schema Analyzer / Schema Catalog"
+    current_step: str = "Step 3 - CPU-only Embedding Pipeline + pgvector"
     log_level: str = "INFO"
 
     medical_db_host: str = "localhost"
@@ -26,6 +37,29 @@ class Settings(BaseSettings):
     catalog_db_user: str = "catalog_user"
     catalog_db_password: str = "catalog_pass_change_me"
 
+    # Embedding (Step 3) — CPU-only by default; no generative LLM.
+    embedding_provider: str = "bge_m3"  # bge_m3 | fake
+    embedding_model_name: str = "BAAI/bge-m3"
+    embedding_model_path: str | None = None
+    embedding_model_revision: str | None = None
+    embedding_device: str = "cpu"
+    embedding_dimension: int = 1024
+    embedding_batch_size: int = 8
+    embedding_max_seq_length: int = 1024
+    embedding_normalize: bool = True
+    embedding_num_threads: int | None = None
+    hf_hub_offline: bool = False
+
+    @field_validator(
+        "embedding_model_path",
+        "embedding_model_revision",
+        "embedding_num_threads",
+        mode="before",
+    )
+    @classmethod
+    def _optional_empty_to_none(cls, value: Any) -> Any:
+        return _empty_as_none(value)
+
     @property
     def medical_db_url(self) -> str:
         return (
@@ -38,6 +72,22 @@ class Settings(BaseSettings):
         return (
             f"postgresql+psycopg://{self.catalog_db_user}:{self.catalog_db_password}"
             f"@{self.catalog_db_host}:{self.catalog_db_port}/{self.catalog_db_name}"
+        )
+
+    def resolved_model_identity(self) -> str:
+        """Prefer local path when valid; otherwise Hugging Face model name."""
+        path = (self.embedding_model_path or "").strip()
+        if path and Path(path).exists():
+            return path
+        return self.embedding_model_name
+
+    def build_model_key(self) -> str:
+        identity = self.resolved_model_identity()
+        rev = self.embedding_model_revision or "default"
+        norm = "true" if self.embedding_normalize else "false"
+        return (
+            f"{identity}|rev={rev}|dim={self.embedding_dimension}"
+            f"|norm={norm}|maxlen={self.embedding_max_seq_length}"
         )
 
 
