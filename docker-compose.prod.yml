@@ -1,0 +1,60 @@
+# Production override for Traefik reverse-proxy deployment.
+#
+# Usage:
+#   cp .env.production.example .env.production
+#   # edit APP_HOST / secrets / TRAEFIK_*
+#   ./scripts/deploy.sh
+#
+# medical_demo is optional in production:
+#   docker compose --env-file .env.production \
+#     -f docker-compose.yml -f docker-compose.prod.yml --profile demo up -d
+#
+# Optional Traefik middlewares:
+#   Do NOT set an empty traefik.http.routers.*.middlewares label (Traefik errors).
+#   If needed, add a second compose fragment or uncomment a middleware label with a
+#   real value, e.g. middlewares=secHeaders@file,compress@file
+
+services:
+  medical-db:
+    # Omit from default prod stack; enable with --profile demo
+    profiles: ["demo"]
+    ports: !reset []
+
+  catalog-db:
+    ports: !reset []
+
+  backend:
+    ports: !reset []
+    # medical-db may be inactive without --profile demo
+    depends_on: !override
+      catalog-db:
+        condition: service_healthy
+    environment:
+      EVALUATION_GIT_COMMIT: ${EVALUATION_GIT_COMMIT:-}
+      EVALUATION_MODEL_REVISION: ${EVALUATION_MODEL_REVISION:-}
+      EMBEDDING_MODEL_REVISION: ${EMBEDDING_MODEL_REVISION:-}
+      EMBEDDING_PROVIDER: ${EMBEDDING_PROVIDER:-fake}
+      EMBEDDING_MODEL_PATH: ${EMBEDDING_MODEL_PATH:-}
+      HF_HUB_OFFLINE: ${HF_HUB_OFFLINE:-false}
+
+  frontend:
+    ports: !reset []
+    networks:
+      - demis-net
+      - traefik
+    labels:
+      - traefik.enable=true
+      - traefik.docker.network=${TRAEFIK_NETWORK:-traefik}
+      - traefik.http.routers.demis-schema.rule=Host(`${APP_HOST}`)
+      - traefik.http.routers.demis-schema.entrypoints=${TRAEFIK_ENTRYPOINTS:-websecure}
+      - traefik.http.routers.demis-schema.tls=true
+      - traefik.http.routers.demis-schema.tls.certresolver=${TRAEFIK_CERTRESOLVER:-letsencrypt}
+      - traefik.http.services.demis-schema.loadbalancer.server.port=8501
+      # Optional middleware — only add when TRAEFIK_MIDDLEWARES is a non-empty value.
+      # Example (uncomment and set in .env.production):
+      # - "traefik.http.routers.demis-schema.middlewares=${TRAEFIK_MIDDLEWARES}"
+
+networks:
+  traefik:
+    external: true
+    name: ${TRAEFIK_NETWORK:-traefik}

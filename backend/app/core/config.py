@@ -22,7 +22,7 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
     app_name: str = "DEMIS Schema Semantic Search PoC"
-    current_step: str = "Step 5 - Gold Set Schema Search Evaluation"
+    current_step: str = "Multi-DB Target Analyzer + Schema Explorer"
     log_level: str = "INFO"
 
     medical_db_host: str = "localhost"

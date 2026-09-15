@@ -81,6 +81,7 @@ def expand_relations(
     seed_table_names: list[str] | None = None,
     max_hops: int = 2,
     default_schema: str = "public",
+    source_id: int | None = None,
 ) -> list[RelatedTableHit]:
     """Bidirectional BFS over FK edges. Cycle-safe via visited table ids."""
     max_hops = max(0, min(int(max_hops), 4))
@@ -88,16 +89,20 @@ def expand_relations(
     if max_hops == 0 or not seeds:
         return []
 
-    tables = list(session.scalars(select(CatalogTable).where(CatalogTable.active.is_(True))).all())
+    table_stmt = select(CatalogTable).where(CatalogTable.active.is_(True))
+    if source_id is not None:
+        table_stmt = table_stmt.where(CatalogTable.source_id == int(source_id))
+    tables = list(session.scalars(table_stmt).all())
     by_id = {t.id: t for t in tables}
     by_key: dict[TableKey, CatalogTable] = {(t.schema_name, t.table_name): t for t in tables}
 
     cols = list(session.scalars(select(CatalogColumn)).all())
     col_by_id = {c.id: c for c in cols}
 
-    relations = list(
-        session.scalars(select(CatalogRelation).where(CatalogRelation.active.is_(True))).all()
-    )
+    rel_stmt = select(CatalogRelation).where(CatalogRelation.active.is_(True))
+    if source_id is not None:
+        rel_stmt = rel_stmt.where(CatalogRelation.source_id == int(source_id))
+    relations = list(session.scalars(rel_stmt).all())
 
     adjacency: dict[int, list[tuple[int, RelationHop]]] = defaultdict(list)
     for rel in relations:

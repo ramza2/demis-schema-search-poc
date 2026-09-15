@@ -26,6 +26,25 @@ class PostgreSQLSchemaInspector(SchemaInspector):
         self._engine = engine
         self._database_name = database_name
 
+    def list_schemas(self) -> list[str]:
+        with self._engine.connect() as conn:
+            rows = conn.execute(
+                text(
+                    """
+                    SELECT nspname
+                    FROM pg_catalog.pg_namespace
+                    WHERE nspname NOT LIKE 'pg_%'
+                      AND nspname <> 'information_schema'
+                    ORDER BY 1
+                    """
+                )
+            ).mappings()
+        return [
+            str(r["nspname"])
+            for r in rows
+            if r["nspname"] not in SYSTEM_SCHEMAS
+        ]
+
     def inspect(self, schema_name: str = "public") -> SchemaSnapshot:
         if schema_name in SYSTEM_SCHEMAS:
             raise ValueError(f"System schema is not analyzable: {schema_name}")

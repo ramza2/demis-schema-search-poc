@@ -113,10 +113,13 @@ def list_tables(
     schema_name: str | None = None,
     active: bool | None = True,
     name: str | None = None,
+    source_id: int | None = None,
 ) -> list[TableSummary]:
     session = _session()
     try:
         stmt = select(CatalogTable)
+        if source_id is not None:
+            stmt = stmt.where(CatalogTable.source_id == source_id)
         if schema_name:
             stmt = stmt.where(CatalogTable.schema_name == schema_name)
         if active is not None:

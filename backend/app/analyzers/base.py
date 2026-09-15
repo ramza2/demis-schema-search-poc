@@ -100,3 +100,31 @@ class SchemaInspector(ABC):
     @abstractmethod
     def inspect(self, schema_name: str = "public") -> SchemaSnapshot:
         raise NotImplementedError
+
+    @abstractmethod
+    def list_schemas(self) -> list[str]:
+        raise NotImplementedError
+
+
+def merge_snapshots(snapshots: list[SchemaSnapshot]) -> SchemaSnapshot:
+    """Concatenate metadata from multiple schema snapshots into one.
+
+    ``db_type`` and ``database_name`` are taken from the first snapshot.
+    ``schema_name`` becomes a comma-joined, sorted unique set of schema names.
+    """
+    if not snapshots:
+        raise ValueError("merge_snapshots requires at least one SchemaSnapshot")
+
+    first = snapshots[0]
+    schema_names = sorted({s.schema_name for s in snapshots if s.schema_name})
+    return SchemaSnapshot(
+        db_type=first.db_type,
+        database_name=first.database_name,
+        schema_name=",".join(schema_names),
+        tables=[t for s in snapshots for t in s.tables],
+        columns=[c for s in snapshots for c in s.columns],
+        primary_keys=[pk for s in snapshots for pk in s.primary_keys],
+        unique_constraints=[u for s in snapshots for u in s.unique_constraints],
+        foreign_keys=[fk for s in snapshots for fk in s.foreign_keys],
+        indexes=[ix for s in snapshots for ix in s.indexes],
+    )

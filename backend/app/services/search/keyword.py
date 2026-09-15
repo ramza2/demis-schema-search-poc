@@ -40,6 +40,7 @@ def keyword_search(
     expanded_terms: list[str],
     limit: int,
     object_type: str | None = None,
+    source_id: int | None = None,
 ) -> tuple[list[KeywordHit], float]:
     """
     OR-based candidate retrieval with explainable weighted scoring.
@@ -55,10 +56,14 @@ def keyword_search(
         return [], 0.0
 
     type_filter = ""
+    source_filter = ""
     params: dict = {"limit": limit}
     if object_type and object_type.upper() in {"TABLE", "COLUMN"}:
         type_filter = "AND d.object_type = :object_type"
         params["object_type"] = object_type.upper()
+    if source_id is not None:
+        source_filter = "AND d.source_id = :source_id"
+        params["source_id"] = int(source_id)
 
     # Build OR ILIKE predicates for candidate retrieval.
     or_clauses: list[str] = []
@@ -97,6 +102,7 @@ def keyword_search(
         LEFT JOIN catalog_column c ON c.id = d.column_id
         WHERE d.active = true
           {type_filter}
+          {source_filter}
           AND ({' OR '.join(or_clauses)})
         LIMIT 500
     """
