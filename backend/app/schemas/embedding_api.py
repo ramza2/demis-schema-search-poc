@@ -57,6 +57,8 @@ class EmbeddingStatsResponse(BaseModel):
     embedding_provider: str
     embedding_device: str
     embedding_dimension: int
+    source_id: int | None = None
+    source_name: str | None = None
 
 
 class SearchDocumentSummary(BaseModel):

@@ -18,13 +18,40 @@ Top-1 / Hit@K / Mean Recall@K / MRR / Latency를 산출합니다.
 
 | Item | Value |
 |------|-------|
-| Embedding | BAAI/bge-m3, CPU, dim=1024 |
+| Embedding | BAAI/bge-m3, dim=1024 (local `bge_m3` or remote `openai_compatible`) |
 | Semantic | pgvector exact cosine |
 | Keyword | PostgreSQL FTS/token |
 | Hybrid | RRF K=60 |
 | Terminology | `backend/app/resources/medical_terms.json` |
 | Relation | FK BFS max hop 2 |
 | LLM / NL→SQL | None |
+
+### Embedding provider 구성
+
+**로컬 모델**
+
+```bash
+EMBEDDING_PROVIDER=bge_m3
+EMBEDDING_MODEL_NAME=BAAI/bge-m3
+EMBEDDING_MODEL_PATH=/models/local/bge-m3
+EMBEDDING_DIMENSION=1024
+EMBEDDING_NORMALIZE=true
+```
+
+**공용 OpenAI-compatible API (ALZI)**
+
+```bash
+EMBEDDING_PROVIDER=openai_compatible
+EMBEDDING_API_URL=https://alzi-embedding.openlink.kr
+EMBEDDING_API_KEY=
+EMBEDDING_API_TIMEOUT_SECONDS=60
+EMBEDDING_MODEL_NAME=BAAI/bge-m3
+EMBEDDING_DIMENSION=1024
+EMBEDDING_NORMALIZE=true
+```
+
+문서 Embedding과 Query Embedding은 동일 provider / `model_key`를 사용합니다.
+원격 API URL은 `model_key`에 포함되지 않습니다.
 
 ## 3. Evaluation 목적
 
@@ -79,8 +106,14 @@ Gold 구조 예:
 
 ## 7. Runner
 
+Official Evaluation은 실제 BGE-M3 Embedding provider만 허용합니다.
+
+- Local Official: `EMBEDDING_PROVIDER=bge_m3`
+- Remote Official: `EMBEDDING_PROVIDER=openai_compatible`
+- `fake`는 Official에서 차단됩니다 (`--allow-fake`는 unit/dev only)
+
 ```bash
-# Official (BGE-M3 required)
+# Local Official (sentence-transformers BGE-M3)
 docker compose exec \
   -e EMBEDDING_PROVIDER=bge_m3 \
   -e EMBEDDING_MODEL_PATH=/models/local/bge-m3 \
@@ -89,9 +122,16 @@ docker compose exec \
   backend python -m app.evaluation.runner \
     --gold /app/evaluation/gold_schema_queries.json \
     --output /app/evaluation/results/run_manual
-```
 
-Fake Provider는 Official Evaluation에서 차단됩니다 (`--allow-fake`는 unit/dev only).
+# Remote Official (ALZI OpenAI-compatible BGE-M3 API)
+# production container가 이미 openai_compatible으로 구성되어 있으면
+# provider override 없이 그대로 실행하면 됩니다.
+docker compose exec \
+  -e PYTHONPATH=/app \
+  backend python -m app.evaluation.runner \
+    --gold /app/evaluation/gold_schema_queries.json \
+    --output /app/evaluation/results/run_manual_remote
+```
 
 본 평가 전 Warm-up Query 1회를 수행하며, Warm-up latency는 통계에서 제외합니다.
 

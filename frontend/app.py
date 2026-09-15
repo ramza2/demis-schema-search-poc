@@ -107,7 +107,9 @@ try:
     c1.metric("Backend", health.get("backend", "unknown"))
     c2.metric("medical_demo", health.get("medical_db", "unknown"))
     c3.metric("schema_catalog", health.get("catalog_db", "unknown"))
-    st.caption(f"step={health.get('step', '')}")
+    if health.get("medical_db_required") is False:
+        st.caption("medical_demo는 optional(disabled 가능). catalog/backend만 health 필수입니다.")
+    st.caption(f"step={health.get('step', '')} · status={health.get('status', '')}")
 except Exception as exc:  # noqa: BLE001
     st.error(f"Backend 연결 실패: {exc}")
     st.stop()
@@ -351,6 +353,26 @@ with tab_explorer:
     if explorer_target:
         tid = explorer_target["id"]
         try:
+            emb_stats = api_get(
+                "/api/v1/embeddings/stats",
+                params={"source_id": tid},
+                timeout=10,
+            ).json()
+            st.markdown("#### Embedding / Documents (선택된 Target)")
+            e1, e2, e3, e4, e5 = st.columns(5)
+            e1.metric("Active docs", emb_stats.get("active_documents", 0))
+            e2.metric("Table docs", emb_stats.get("table_documents", 0))
+            e3.metric("Column docs", emb_stats.get("column_documents", 0))
+            e4.metric("Embeddings", emb_stats.get("embedding_count", 0))
+            e5.metric("Stale docs", emb_stats.get("stale_documents", 0))
+            st.caption(
+                f"source_id={emb_stats.get('source_id')} · "
+                f"source_name={emb_stats.get('source_name')}"
+            )
+        except Exception as exc:  # noqa: BLE001
+            st.warning(f"Embedding stats 로드 실패: {exc}")
+
+        try:
             summary_resp = api_get(f"/api/v1/targets/{tid}/catalog-summary")
             if summary_resp.ok:
                 summary = summary_resp.json()
@@ -490,6 +512,23 @@ with tab_explorer:
 with tab_search:
     st.markdown("### Schema Search")
     search_target = target_selector(targets, key="search_target", required=True)
+    if search_target:
+        try:
+            search_stats = api_get(
+                "/api/v1/embeddings/stats",
+                params={"source_id": search_target["id"]},
+                timeout=10,
+            ).json()
+            st.caption(
+                "Target embedding: "
+                f"active={search_stats.get('active_documents')} · "
+                f"table={search_stats.get('table_documents')} · "
+                f"column={search_stats.get('column_documents')} · "
+                f"embeddings={search_stats.get('embedding_count')} · "
+                f"stale={search_stats.get('stale_documents')}"
+            )
+        except Exception:  # noqa: BLE001
+            pass
 
     query = st.text_input(
         "자연어 Query",

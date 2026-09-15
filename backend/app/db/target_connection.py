@@ -141,21 +141,29 @@ def probe_connection(engine: Engine, db_type: str) -> dict[str, Any]:
                 "database_or_service": str(row["database_name"] or ""),
                 "current_user": str(row["current_user"]),
             }
-        # Oracle
-        row = conn.execute(
-            text(
-                "SELECT banner AS version FROM v$version WHERE banner LIKE 'Oracle%' "
-                "AND ROWNUM = 1"
-            )
-        ).mappings().first()
+        # Oracle: basic connectivity via dual/sys_context (no V$ privilege required).
         user_row = conn.execute(text("SELECT USER AS current_user FROM dual")).mappings().one()
         svc = conn.execute(
             text("SELECT SYS_CONTEXT('USERENV','SERVICE_NAME') AS svc FROM dual")
         ).mappings().one()
+        db_version = "unavailable"
+        try:
+            row = conn.execute(
+                text(
+                    "SELECT banner AS version FROM v$version WHERE banner LIKE 'Oracle%' "
+                    "AND ROWNUM = 1"
+                )
+            ).mappings().first()
+            if row and row.get("version"):
+                db_version = str(row["version"])
+            else:
+                db_version = "Oracle"
+        except Exception:  # noqa: BLE001 — V$VERSION may be denied for low-privilege accounts
+            db_version = "unavailable"
         return {
             "connected": True,
             "dbms_product": "Oracle",
-            "db_version": str((row or {}).get("version") or "Oracle"),
+            "db_version": db_version,
             "database_or_service": str(svc["svc"] or ""),
             "current_user": str(user_row["current_user"]),
         }
