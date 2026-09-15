@@ -1,6 +1,6 @@
 {
-  "executed_at": "2026-09-15T02:00:18.424826+00:00",
-  "git_commit": "b4aabb77d17bc8d65bc1c7f774022c6d33d141df",
+  "executed_at": "2026-09-15T03:46:51.197167+00:00",
+  "git_commit": "f3c05e6b656782666fafbbdf9caeff947ceb9bfd",
   "model_name": "nlpai-lab/KoE5",
   "model_key": "provider=koe5|model=nlpai-lab/KoE5|rev=bc6d284c60fe5a973e74c1751b92594c9f581213|dim=1024|norm=true|maxlen=512|prefix=e5-query-passage-v1",
   "model_revision": "bc6d284c60fe5a973e74c1751b92594c9f581213",
