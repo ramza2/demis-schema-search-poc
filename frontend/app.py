@@ -206,7 +206,10 @@ with tab_targets:
         st.caption(HOST_INPUT_HINT)
         username = st.text_input("Username")
         password = st.text_input("Password", type="password")
-        st.caption("Password는 Catalog DB에 암호화되어 저장됩니다. 평문으로는 저장/표시되지 않습니다.")
+        st.caption(
+            "비밀번호가 없는 계정은 공란으로 등록할 수 있습니다. "
+            "입력값은 Catalog DB에 암호화되어 저장되며 평문으로 표시되지 않습니다."
+        )
 
         database_name = ""
         default_schema = "public"
@@ -243,8 +246,6 @@ with tab_targets:
                 missing.append("default_schema")
             if not username.strip():
                 missing.append("username")
-            if not password:
-                missing.append("password")
             if missing:
                 st.error(f"필수 항목 누락: {', '.join(missing)}")
             else:
@@ -278,12 +279,19 @@ with tab_targets:
             + (" — Test / Discover / Analyze 시 저장된 비밀번호를 사용합니다." if has_saved else "")
         )
         temp_password = ""
+        temp_passwordless = False
         if not has_saved:
-            st.warning("저장된 Credential이 없습니다. 아래에서 임시 Password를 입력하거나 Edit Target에서 등록하세요.")
+            st.warning("저장된 Credential이 없습니다. 임시 Password를 입력하거나 Edit Target에서 등록하세요.")
+            temp_passwordless = st.checkbox(
+                "임시 빈 비밀번호 사용",
+                value=False,
+                key="target_action_temp_passwordless",
+            )
             temp_password = st.text_input(
                 "임시 Password (이 요청에만 사용, 저장되지 않음)",
                 type="password",
                 key="target_action_temp_password",
+                disabled=temp_passwordless,
             )
 
         with st.expander("Edit Target", expanded=False):
@@ -316,17 +324,23 @@ with tab_targets:
                 )
                 st.caption(
                     f"Saved credential: {'있음' if has_saved else '없음'} — "
-                    "새 Password를 입력하면 기존 Credential을 교체합니다. 비워두면 유지합니다."
-                )
-                edit_password = st.text_input(
-                    "Password (새 비밀번호 입력 시 기존 credential 교체)",
-                    type="password",
-                    key=f"edit_password_{selected['id']}",
+                    "Password 입력란을 비워두면 기존 Credential을 유지합니다."
                 )
                 clear_saved = st.checkbox(
                     "저장된 Credential 삭제",
                     value=False,
                     key=f"edit_clear_cred_{selected['id']}",
+                )
+                set_empty_password = st.checkbox(
+                    "빈 비밀번호로 변경",
+                    value=False,
+                    key=f"edit_empty_cred_{selected['id']}",
+                )
+                edit_password = st.text_input(
+                    "Password (새 비밀번호 입력 시 기존 credential 교체)",
+                    type="password",
+                    key=f"edit_password_{selected['id']}",
+                    disabled=clear_saved or set_empty_password,
                 )
                 edit_enabled = st.checkbox(
                     "Enabled",
@@ -335,40 +349,52 @@ with tab_targets:
                 )
                 save_edit = st.form_submit_button("Save Target", type="primary")
                 if save_edit:
-                    update_payload: dict[str, Any] = {
-                        "source_name": edit_name.strip(),
-                        "db_type": edit_db_type,
-                        "host": edit_host.strip(),
-                        "port": int(edit_port),
-                        "database_name": edit_database.strip(),
-                        "default_schema": edit_schema.strip() or "public",
-                        "username": edit_username.strip(),
-                        "enabled": edit_enabled,
-                        "clear_saved_password": clear_saved,
-                    }
-                    if edit_db_type == "oracle":
-                        update_payload["connection_options"] = (
-                            {"service_name": edit_database.strip()}
-                            if edit_database.strip()
-                            else None
+                    credential_change_count = sum(
+                        [bool(edit_password), bool(clear_saved), bool(set_empty_password)]
+                    )
+                    if credential_change_count > 1:
+                        st.error(
+                            "Password 변경, 빈 비밀번호 변경, Credential 삭제 중 하나만 선택하세요."
                         )
-                    if edit_password and not clear_saved:
-                        update_payload["password"] = edit_password
-                    try:
-                        upd = api_put(
-                            f"/api/v1/targets/{selected['id']}",
-                            json=update_payload,
-                            timeout=30,
-                        )
-                        show_response(upd)
-                        if upd.ok:
-                            st.rerun()
-                    except Exception as exc:  # noqa: BLE001
-                        st.error(f"Target 수정 실패: {exc}")
+                    else:
+                        update_payload: dict[str, Any] = {
+                            "source_name": edit_name.strip(),
+                            "db_type": edit_db_type,
+                            "host": edit_host.strip(),
+                            "port": int(edit_port),
+                            "database_name": edit_database.strip(),
+                            "default_schema": edit_schema.strip() or "public",
+                            "username": edit_username.strip(),
+                            "enabled": edit_enabled,
+                            "clear_saved_password": clear_saved,
+                        }
+                        if edit_db_type == "oracle":
+                            update_payload["connection_options"] = (
+                                {"service_name": edit_database.strip()}
+                                if edit_database.strip()
+                                else None
+                            )
+                        if set_empty_password:
+                            update_payload["password"] = ""
+                        elif edit_password:
+                            update_payload["password"] = edit_password
+                        try:
+                            upd = api_put(
+                                f"/api/v1/targets/{selected['id']}",
+                                json=update_payload,
+                                timeout=30,
+                            )
+                            show_response(upd)
+                            if upd.ok:
+                                st.rerun()
+                        except Exception as exc:  # noqa: BLE001
+                            st.error(f"Target 수정 실패: {exc}")
 
         def _action_password_payload() -> dict[str, str] | None:
             if has_saved:
                 return {}
+            if temp_passwordless:
+                return {"password": ""}
             if temp_password:
                 return {"password": temp_password}
             return None
@@ -428,7 +454,7 @@ with tab_targets:
             else:
                 try:
                     payload = {"schemas": chosen_schemas}
-                    if body.get("password"):
+                    if "password" in body:
                         payload["password"] = body["password"]
                     r = api_post(
                         f"/api/v1/targets/{selected['id']}/analyze",
