@@ -4,11 +4,14 @@ from __future__ import annotations
 
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse
 
 from app.api.router import api_router
 from app.core.config import get_settings
 from app.db.catalog_bootstrap import ensure_catalog_schema
+from app.db.target_connection import HOST_VALIDATION_MESSAGE
 
 
 @asynccontextmanager
@@ -28,6 +31,21 @@ def create_app() -> FastAPI:
         lifespan=lifespan,
     )
     app.include_router(api_router)
+
+    @app.exception_handler(RequestValidationError)
+    async def _host_validation_as_400(
+        _request: Request, exc: RequestValidationError
+    ) -> JSONResponse:
+        """Map Target Host validation failures to HTTP 400 with a clear message."""
+        for err in exc.errors():
+            msg = str(err.get("msg") or "")
+            loc = err.get("loc") or ()
+            if HOST_VALIDATION_MESSAGE in msg and "host" in {str(x) for x in loc}:
+                return JSONResponse(
+                    status_code=400,
+                    content={"detail": HOST_VALIDATION_MESSAGE},
+                )
+        return JSONResponse(status_code=422, content={"detail": exc.errors()})
 
     @app.get("/")
     def root() -> dict[str, str]:

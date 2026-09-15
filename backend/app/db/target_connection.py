@@ -18,6 +18,11 @@ DEFAULT_PORTS = {
     "oracle": 1521,
 }
 
+HOST_VALIDATION_MESSAGE = (
+    "Host에는 프로토콜(http://, https://)이나 URL path가 아닌 "
+    "hostname 또는 IP 주소만 입력하세요."
+)
+
 
 @dataclass(frozen=True)
 class TargetConnectionInfo:
@@ -44,6 +49,20 @@ def normalize_db_type(db_type: str) -> str:
     return normalized
 
 
+def validate_target_host(host: str) -> str:
+    """Reject protocol/URL-like Host values; accept hostname or IP (incl. IPv6)."""
+    value = (host or "").strip()
+    if not value:
+        raise ValueError(HOST_VALIDATION_MESSAGE)
+    lowered = value.lower()
+    if "://" in value or lowered.startswith("http://") or lowered.startswith("https://"):
+        raise ValueError(HOST_VALIDATION_MESSAGE)
+    # Reject path-like values (e.g. "host/db"). IPv6 literals use ":" / optional "[]" only.
+    if "/" in value:
+        raise ValueError(HOST_VALIDATION_MESSAGE)
+    return value
+
+
 def mask_secrets(message: str, *secrets: str | None) -> str:
     """Redact credentials from exception/log text."""
     out = message or ""
@@ -60,6 +79,24 @@ def mask_secrets(message: str, *secrets: str | None) -> str:
         except ValueError:
             out = "connection error (details redacted)"
     return out
+
+
+def build_connect_args(db_type: str, connect_timeout_seconds: float | int) -> dict[str, Any]:
+    """Driver-level connect timeout kwargs for SQLAlchemy create_engine(connect_args=...)."""
+    db_type = normalize_db_type(db_type)
+    timeout = max(1, int(round(float(connect_timeout_seconds))))
+    if db_type == "postgresql":
+        # psycopg / libpq: connect_timeout is seconds (int).
+        return {"connect_timeout": timeout}
+    if db_type in {"mysql", "mariadb"}:
+        # PyMySQL: connect/read/write timeouts in seconds.
+        return {
+            "connect_timeout": timeout,
+            "read_timeout": timeout,
+            "write_timeout": timeout,
+        }
+    # Oracle python-oracledb Thin: tcp_connect_timeout (seconds, float) is supported.
+    return {"tcp_connect_timeout": float(timeout)}
 
 
 def build_target_url(info: TargetConnectionInfo, password: str) -> str:
@@ -92,13 +129,15 @@ def create_target_engine(
     password: str,
     *,
     pool_pre_ping: bool = True,
+    connect_timeout_seconds: float | int | None = None,
 ) -> Engine:
     url = build_target_url(info, password)
-    connect_args: dict[str, Any] = {}
     db_type = normalize_db_type(info.db_type)
-    if db_type == "oracle":
-        # Thin mode is default for python-oracledb; no Instant Client required.
-        connect_args = {}
+    if connect_timeout_seconds is None:
+        from app.core.config import get_settings
+
+        connect_timeout_seconds = get_settings().target_db_connect_timeout_seconds
+    connect_args = build_connect_args(db_type, connect_timeout_seconds)
     return create_engine(
         url,
         pool_pre_ping=pool_pre_ping,
@@ -106,6 +145,22 @@ def create_target_engine(
         max_overflow=0,
         connect_args=connect_args,
     )
+
+
+def is_connection_timeout_error(exc: BaseException) -> bool:
+    """Heuristic: driver/SQLAlchemy timeout vs other connection failures."""
+    name = type(exc).__name__.lower()
+    text_value = str(exc).lower()
+    markers = (
+        "timeout",
+        "timed out",
+        "time out",
+        "deadline exceeded",
+        "connection timed out",
+    )
+    if any(m in name for m in markers):
+        return True
+    return any(m in text_value for m in markers)
 
 
 def probe_connection(engine: Engine, db_type: str) -> dict[str, Any]:

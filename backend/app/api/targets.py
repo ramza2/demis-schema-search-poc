@@ -15,7 +15,7 @@ from app.schemas.target_api import (
     TargetUpdate,
     TestConnectionResponse,
 )
-from app.services.target_service import TargetService
+from app.services.target_service import TargetConnectionTimeoutError, TargetService
 
 router = APIRouter(prefix="/api/v1/targets", tags=["targets"])
 
@@ -29,6 +29,8 @@ def _http_from_value(exc: ValueError) -> HTTPException:
 
 
 def _http_from_runtime(exc: RuntimeError) -> HTTPException:
+    if isinstance(exc, TargetConnectionTimeoutError):
+        return HTTPException(status_code=504, detail=str(exc))
     return HTTPException(status_code=502, detail=str(exc))
 
 
@@ -94,6 +96,10 @@ def analyze_target(target_id: int, body: AnalyzeRequest) -> AnalyzeResponse:
         raise _http_from_lookup(exc) from exc
     except ValueError as exc:
         raise _http_from_value(exc) from exc
+    except RuntimeError as exc:
+        # Connect/probe timeout -> 504; other connection failures -> 502.
+        # Post-connect inspect/catalog errors still return FAILED AnalyzeResponse.
+        raise _http_from_runtime(exc) from exc
     return AnalyzeResponse(
         run_id=run.id,
         status=run.status,

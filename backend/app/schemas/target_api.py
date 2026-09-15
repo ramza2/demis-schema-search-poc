@@ -5,8 +5,9 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from app.db.target_connection import validate_target_host
 from app.schemas.schema_api import AnalyzeResponse
 
 
@@ -21,6 +22,11 @@ class TargetCreate(BaseModel):
     connection_options: dict[str, Any] | None = None
     enabled: bool = True
 
+    @field_validator("host")
+    @classmethod
+    def _validate_host(cls, value: str) -> str:
+        return validate_target_host(value)
+
 
 class TargetUpdate(BaseModel):
     source_name: str | None = Field(default=None, min_length=1, max_length=100)
@@ -33,6 +39,12 @@ class TargetUpdate(BaseModel):
     connection_options: dict[str, Any] | None = None
     enabled: bool | None = None
 
+    @field_validator("host")
+    @classmethod
+    def _validate_host(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        return validate_target_host(value)
 
 class TargetOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)

@@ -209,6 +209,9 @@ Init SQL: `database/integration/mysql_init.sql`, `database/integration/mariadb_i
 
 ## 15. Target Registration / Password Non-persistence
 
+- `TARGET_DB_CONNECT_TIMEOUT_SECONDS` (default `5`): driver-level connect timeout for Test Connection / schema discover / analyze.
+- Host에는 protocol(`http://`)이나 URL path 없이 hostname 또는 IP만 입력하세요. 방화벽/DNS 오류 시 위 timeout 안에 실패합니다.
+
 - `POST /api/v1/targets` 등으로 Target Profile을 등록합니다.
 - `catalog_source`에는 host/port/db/user/options만 저장하고 **password는 저장하지 않습니다**.
 - Analyze / probe 시점에만 password를 전달하며, 로그·예외 메시지에서는 마스킹합니다.

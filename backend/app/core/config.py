@@ -56,6 +56,9 @@ class Settings(BaseSettings):
     embedding_api_key: str | None = None
     embedding_api_timeout_seconds: float = 60.0
 
+    # External Target DB connect timeout (seconds) for Test Connection / Inspect.
+    target_db_connect_timeout_seconds: float = 5.0
+
     # Step 4 search settings
     allow_fake_semantic_search: bool = False
     search_rrf_k: int = 60
