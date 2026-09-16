@@ -20,7 +20,7 @@ from app.core.config import Settings, get_settings
 from app.db.session import get_catalog_session_factory
 from app.embeddings.factory import get_embedding_provider
 from app.evaluation.experiments import EXPERIMENTS, Experiment
-from app.evaluation.gold import GoldDataset, assert_valid_gold, load_gold_dataset
+from app.evaluation.gold import GoldDataset, load_gold_dataset, validate_gold_dataset
 from app.evaluation.metrics import (
     extract_column_candidates,
     extract_relation_tables,
@@ -54,6 +54,7 @@ from app.services.search.terminology import clear_concept_cache, get_concepts
 
 
 DEFAULT_GOLD = Path(__file__).resolve().parents[2] / "evaluation" / "gold_schema_queries.json"
+DEFAULT_SOURCE_NAME = "medical_demo"
 
 
 class OfficialEvaluationError(RuntimeError):
@@ -69,22 +70,64 @@ def _dict_hash() -> str:
     return hashlib.sha256(blob.encode("utf-8")).hexdigest()
 
 
-def _schema_fingerprint(session) -> str:
+def _schema_fingerprint(session, *, source_id: int | None = None) -> str:
     try:
         from sqlalchemy import text
 
-        row = session.execute(
-            text(
+        if source_id is None:
+            stmt = text(
                 "SELECT coalesce(max(schema_fingerprint), '') FROM catalog_analysis_run "
                 "WHERE status = 'SUCCESS'"
             )
-        ).scalar()
+            params = {}
+        else:
+            stmt = text(
+                "SELECT coalesce(max(schema_fingerprint), '') FROM catalog_analysis_run "
+                "WHERE status = 'SUCCESS' AND source_id = :source_id"
+            )
+            params = {"source_id": int(source_id)}
+        row = session.execute(stmt, params).scalar()
         value = str(row or "").strip()
         if value:
             return value
         return "unavailable: no successful analysis fingerprint"
     except Exception as exc:  # noqa: BLE001
         return f"unavailable: {type(exc).__name__}"
+
+
+def _resolve_evaluation_source(session, source_name: str):
+    from sqlalchemy import select
+
+    from app.models.catalog import CatalogSource
+
+    normalized = str(source_name or "").strip()
+    if not normalized:
+        raise OfficialEvaluationError("evaluation source name must not be empty")
+    source = session.scalar(
+        select(CatalogSource).where(CatalogSource.source_name == normalized)
+    )
+    if source is None:
+        raise OfficialEvaluationError(
+            f"catalog_source {normalized!r} is required for evaluation"
+        )
+    return source
+
+
+def _assert_gold_valid_for_source(dataset: GoldDataset, *, session, source_id: int) -> None:
+    errors = validate_gold_dataset(
+        dataset,
+        session=session,
+        require_catalog=True,
+        source_id=source_id,
+    )
+    if errors:
+        suffix = " ..." if len(errors) > 20 else ""
+        raise OfficialEvaluationError(
+            "gold dataset is invalid for evaluation source: "
+            + "; ".join(errors[:20])
+            + suffix
+        )
+
 
 _OFFICIAL_EMBEDDING_PROVIDERS = frozenset({"bge_m3", "openai_compatible", "koe5"})
 
@@ -191,6 +234,7 @@ def run_evaluation(
     allow_fake: bool = False,
     experiments: tuple[Experiment, ...] | None = None,
     warmup: bool = True,
+    source_name: str = DEFAULT_SOURCE_NAME,
 ) -> Path:
     settings = get_settings()
     if not allow_fake:
@@ -199,28 +243,24 @@ def run_evaluation(
     session = get_catalog_session_factory()()
     try:
         dataset = load_gold_dataset(gold_path)
-        assert_valid_gold(dataset, session=session)
+        eval_source = _resolve_evaluation_source(session, source_name)
+        eval_source_id = int(eval_source.id)
+        eval_source_name = str(eval_source.source_name)
+        _assert_gold_valid_for_source(
+            dataset,
+            session=session,
+            source_id=eval_source_id,
+        )
 
         provider = get_embedding_provider(settings)
         model_key = provider.model_key
-        # Official evaluation always uses medical_demo source isolation.
-        from sqlalchemy import select as sa_select
-
-        from app.models.catalog import CatalogSource
-
-        medical = session.scalar(
-            sa_select(CatalogSource).where(CatalogSource.source_name == "medical_demo")
-        )
-        if medical is None:
-            raise OfficialEvaluationError("catalog_source 'medical_demo' is required for evaluation")
-        eval_source_id = int(medical.id)
 
         needs_semantic = any(e.mode in {"semantic", "hybrid"} for e in (experiments or EXPERIMENTS))
         if needs_semantic:
             cnt = embedding_count(session, model_key, source_id=eval_source_id)
             if cnt == 0:
                 raise OfficialEvaluationError(
-                    f"No embeddings for model_key={model_key} source=medical_demo. "
+                    f"No embeddings for model_key={model_key} source={eval_source_name}. "
                     "Run POST /api/v1/embeddings/run first."
                 )
 
@@ -271,6 +311,8 @@ def run_evaluation(
         metadata = {
             "executed_at": datetime.now(timezone.utc).isoformat(),
             "git_commit": resolve_git_commit(),
+            "source_name": eval_source_name,
+            "source_id": eval_source_id,
             "model_name": settings.embedding_model_name,
             "model_key": model_key,
             "model_revision": resolve_model_revision(settings),
@@ -304,7 +346,7 @@ def run_evaluation(
             "python_version": sys.version,
             "platform": platform.platform(),
             "processor": platform.processor() or platform.machine(),
-            "schema_fingerprint": _schema_fingerprint(session),
+            "schema_fingerprint": _schema_fingerprint(session, source_id=eval_source_id),
             "top_k": top_k,
             "warmup": warmup,
             "allow_fake": allow_fake,
@@ -332,6 +374,11 @@ def build_arg_parser() -> argparse.ArgumentParser:
         type=Path,
         default=Path(os.environ.get("GOLD_DATASET_PATH", str(DEFAULT_GOLD))),
         help="Path to gold_schema_queries.json",
+    )
+    p.add_argument(
+        "--source-name",
+        default=os.environ.get("EVALUATION_SOURCE_NAME", DEFAULT_SOURCE_NAME),
+        help="Catalog source_name to evaluate (default: medical_demo)",
     )
     p.add_argument(
         "--output",
@@ -362,6 +409,7 @@ def main(argv: list[str] | None = None) -> int:
             top_k=args.top_k,
             allow_fake=args.allow_fake,
             warmup=not args.no_warmup,
+            source_name=args.source_name,
         )
     except OfficialEvaluationError as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
