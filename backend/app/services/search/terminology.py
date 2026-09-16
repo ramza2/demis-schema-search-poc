@@ -176,7 +176,10 @@ def expand_query(
         for term in concept.expansion_terms:
             if not term:
                 continue
-            if term.lower() in query_lower:
+            # Skip only when the term itself is already present. English aliases
+            # must use token boundaries so `lab` is not incorrectly suppressed by
+            # an existing `laboratory` token in the user's query.
+            if _term_hits(term, normalized_query, query_lower):
                 continue
             if term not in expanded:
                 expanded.append(term)
