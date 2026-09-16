@@ -87,6 +87,33 @@
       ]
     },
     {
+      "id": "laboratory_test",
+      "label": "임상검사",
+      "triggers": [
+        "혈액검사",
+        "혈액 검사",
+        "검사결과",
+        "검사 결과",
+        "정상범위",
+        "정상 범위",
+        "참고범위",
+        "참고 범위",
+        "blood test",
+        "lab result",
+        "laboratory result",
+        "reference range"
+      ],
+      "expansion_terms": [
+        "임상검사",
+        "검사결과",
+        "laboratory",
+        "lab",
+        "test result",
+        "reference range",
+        "정상범위"
+      ]
+    },
+    {
       "id": "hypertension",
       "label": "고혈압",
       "triggers": [
