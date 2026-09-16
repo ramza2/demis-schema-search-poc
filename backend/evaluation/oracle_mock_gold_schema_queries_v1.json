@@ -1,0 +1,396 @@
+{
+  "version": "oracle-mock-v1",
+  "description": "Oracle Mock DEMIS (DEMIS_OWNER) schema semantic search gold set - 42 natural-language queries. Draft for catalog validation/freeze before tuning.",
+  "queries": [
+    {
+      "id": "OQ001",
+      "category": "clinical_natural_language",
+      "query": "환자의 혈액검사 결과와 정상 참고범위를 확인하려면 어떤 테이블을 봐야 하나?",
+      "gold": {
+        "primary_tables": ["DEMIS_OWNER.TB_LAB_RST"],
+        "acceptable_tables": ["DEMIS_OWNER.TB_LAB_REF", "DEMIS_OWNER.TB_LAB_ORD"],
+        "relevant_columns": ["DEMIS_OWNER.TB_LAB_RST.RST_VAL", "DEMIS_OWNER.TB_LAB_RST.RST_NUM", "DEMIS_OWNER.TB_LAB_RST.ABN_FLAG_CD"]
+      }
+    },
+    {
+      "id": "OQ002",
+      "category": "clinical_natural_language",
+      "query": "환자의 영상검사 판독 결과와 주요 소견을 확인하려면 어떤 테이블을 봐야 하나?",
+      "gold": {
+        "primary_tables": ["DEMIS_OWNER.TB_RAD_RPT"],
+        "acceptable_tables": ["DEMIS_OWNER.TB_RAD_ORD"],
+        "relevant_columns": ["DEMIS_OWNER.TB_RAD_RPT.FINDINGS", "DEMIS_OWNER.TB_RAD_RPT.IMPRESSION"]
+      }
+    },
+    {
+      "id": "OQ003",
+      "category": "clinical_natural_language",
+      "query": "환자의 약제 처방과 실제 투약 이력을 함께 확인하려면 어떤 테이블을 봐야 하나?",
+      "gold": {
+        "primary_tables": ["DEMIS_OWNER.TB_MED_ORD", "DEMIS_OWNER.TB_MED_ADM"],
+        "acceptable_tables": ["DEMIS_OWNER.TB_ORD_DTL"],
+        "relevant_columns": ["DEMIS_OWNER.TB_MED_ORD.DRUG_NM", "DEMIS_OWNER.TB_MED_ORD.DOSE_QTY", "DEMIS_OWNER.TB_MED_ORD.ROUTE_CD", "DEMIS_OWNER.TB_MED_ADM.MED_ORD_ID"]
+      }
+    },
+    {
+      "id": "OQ004",
+      "category": "clinical_natural_language",
+      "query": "환자의 입원 이력과 병동 정보를 확인하려면 어떤 테이블을 봐야 하나?",
+      "gold": {
+        "primary_tables": ["DEMIS_OWNER.TB_ADM_HIST"],
+        "acceptable_tables": ["DEMIS_OWNER.TB_ENC_HIST"],
+        "relevant_columns": ["DEMIS_OWNER.TB_ADM_HIST.WARD_CD"]
+      }
+    },
+    {
+      "id": "OQ005",
+      "category": "clinical_natural_language",
+      "query": "환자의 퇴원 이력을 확인하려면 어떤 테이블을 봐야 하나?",
+      "gold": {
+        "primary_tables": ["DEMIS_OWNER.TB_DISCH_HIST"],
+        "acceptable_tables": ["DEMIS_OWNER.TB_ENC_HIST", "DEMIS_OWNER.TB_DISCH_SUM"]
+      }
+    },
+    {
+      "id": "OQ006",
+      "category": "clinical_natural_language",
+      "query": "퇴원 시 작성된 요약 기록을 확인하려면 어떤 테이블을 봐야 하나?",
+      "gold": {
+        "primary_tables": ["DEMIS_OWNER.TB_DISCH_SUM"],
+        "acceptable_tables": ["DEMIS_OWNER.TB_DISCH_HIST", "DEMIS_OWNER.TB_ENC_HIST"]
+      }
+    },
+    {
+      "id": "OQ007",
+      "category": "clinical_natural_language",
+      "query": "환자의 진단 이력과 주진단 여부를 확인하려면 어떤 테이블을 봐야 하나?",
+      "gold": {
+        "primary_tables": ["DEMIS_OWNER.TB_DX_HIST"],
+        "acceptable_tables": ["DEMIS_OWNER.TB_DX_DTL"],
+        "relevant_columns": ["DEMIS_OWNER.TB_DX_HIST.DX_CD", "DEMIS_OWNER.TB_DX_HIST.MAIN_DX_YN"]
+      }
+    },
+    {
+      "id": "OQ008",
+      "category": "clinical_natural_language",
+      "query": "진단별 상세 정보를 확인하려면 어떤 테이블을 봐야 하나?",
+      "gold": {
+        "primary_tables": ["DEMIS_OWNER.TB_DX_DTL"],
+        "acceptable_tables": ["DEMIS_OWNER.TB_DX_HIST"]
+      }
+    },
+    {
+      "id": "OQ009",
+      "category": "clinical_natural_language",
+      "query": "환자의 SOAP 형식 진료기록을 확인하려면 어떤 테이블을 봐야 하나?",
+      "gold": {
+        "primary_tables": ["DEMIS_OWNER.TB_SOAP_NOTE"],
+        "acceptable_tables": ["DEMIS_OWNER.TB_CLN_NOTE", "DEMIS_OWNER.TB_ENC_HIST"]
+      }
+    },
+    {
+      "id": "OQ010",
+      "category": "clinical_natural_language",
+      "query": "환자의 일반 임상 진료기록을 확인하려면 어떤 테이블을 봐야 하나?",
+      "gold": {
+        "primary_tables": ["DEMIS_OWNER.TB_CLN_NOTE"],
+        "acceptable_tables": ["DEMIS_OWNER.TB_SOAP_NOTE", "DEMIS_OWNER.TB_ENC_HIST"]
+      }
+    },
+    {
+      "id": "OQ011",
+      "category": "clinical_natural_language",
+      "query": "진료 Encounter의 유형과 담당 의료진을 확인하려면 어떤 테이블을 봐야 하나?",
+      "gold": {
+        "primary_tables": ["DEMIS_OWNER.TB_ENC_HIST"],
+        "acceptable_tables": ["DEMIS_OWNER.TB_DCTR_MST"],
+        "relevant_columns": ["DEMIS_OWNER.TB_ENC_HIST.ENC_ID", "DEMIS_OWNER.TB_ENC_HIST.ENC_TYP_CD", "DEMIS_OWNER.TB_ENC_HIST.DCTR_ID"]
+      }
+    },
+    {
+      "id": "OQ012",
+      "category": "clinical_natural_language",
+      "query": "군 복무자의 소속 부대 정보를 확인하려면 어떤 테이블을 봐야 하나?",
+      "gold": {
+        "primary_tables": ["DEMIS_OWNER.TB_SVC_MEMBER", "DEMIS_OWNER.TB_UNIT_MST"],
+        "acceptable_tables": ["DEMIS_OWNER.TB_PT_MST"]
+      }
+    },
+    {
+      "id": "OQ013",
+      "category": "clinical_natural_language",
+      "query": "환자의 주소와 연락처 정보를 함께 확인하려면 어떤 테이블을 봐야 하나?",
+      "gold": {
+        "primary_tables": ["DEMIS_OWNER.TB_PT_ADDR", "DEMIS_OWNER.TB_PT_CONTACT"],
+        "acceptable_tables": ["DEMIS_OWNER.TB_PT_MST"]
+      }
+    },
+    {
+      "id": "OQ014",
+      "category": "clinical_natural_language",
+      "query": "의료진이 어느 진료과에 소속되어 있는지 확인하려면 어떤 테이블을 봐야 하나?",
+      "gold": {
+        "primary_tables": ["DEMIS_OWNER.TB_DCTR_MST", "DEMIS_OWNER.TB_DEPT_MST"]
+      }
+    },
+    {
+      "id": "OQ015",
+      "category": "clinical_natural_language",
+      "query": "진료 오더의 기본 정보와 상세 항목을 함께 확인하려면 어떤 테이블을 봐야 하나?",
+      "gold": {
+        "primary_tables": ["DEMIS_OWNER.TB_ORD_HDR", "DEMIS_OWNER.TB_ORD_DTL"]
+      }
+    },
+    {
+      "id": "OQ016",
+      "category": "clinical_natural_language",
+      "query": "임상검사 요청 내역을 확인하려면 어떤 테이블을 봐야 하나?",
+      "gold": {
+        "primary_tables": ["DEMIS_OWNER.TB_LAB_ORD"],
+        "acceptable_tables": ["DEMIS_OWNER.TB_ORD_DTL", "DEMIS_OWNER.TB_LAB_RST"]
+      }
+    },
+    {
+      "id": "OQ017",
+      "category": "clinical_natural_language",
+      "query": "영상검사 요청 내역을 확인하려면 어떤 테이블을 봐야 하나?",
+      "gold": {
+        "primary_tables": ["DEMIS_OWNER.TB_RAD_ORD"],
+        "acceptable_tables": ["DEMIS_OWNER.TB_ORD_DTL", "DEMIS_OWNER.TB_RAD_RPT"]
+      }
+    },
+    {
+      "id": "OQ018",
+      "category": "clinical_natural_language",
+      "query": "공통 코드와 코드 값을 관리하는 기준정보는 어느 테이블에서 확인하나?",
+      "gold": {
+        "primary_tables": ["DEMIS_OWNER.TB_CD_MST"]
+      }
+    },
+    {
+      "id": "OQ019",
+      "category": "paraphrase",
+      "query": "lab result values and reference range for a patient",
+      "gold": {
+        "primary_tables": ["DEMIS_OWNER.TB_LAB_RST"],
+        "acceptable_tables": ["DEMIS_OWNER.TB_LAB_REF", "DEMIS_OWNER.TB_LAB_ORD"],
+        "relevant_columns": ["DEMIS_OWNER.TB_LAB_RST.RST_VAL", "DEMIS_OWNER.TB_LAB_RST.RST_NUM"]
+      }
+    },
+    {
+      "id": "OQ020",
+      "category": "paraphrase",
+      "query": "radiology findings and impression 보고서는 어디에 저장되나?",
+      "gold": {
+        "primary_tables": ["DEMIS_OWNER.TB_RAD_RPT"],
+        "acceptable_tables": ["DEMIS_OWNER.TB_RAD_ORD"],
+        "relevant_columns": ["DEMIS_OWNER.TB_RAD_RPT.FINDINGS", "DEMIS_OWNER.TB_RAD_RPT.IMPRESSION"]
+      }
+    },
+    {
+      "id": "OQ021",
+      "category": "paraphrase",
+      "query": "medication order와 실제 medication administration 기록을 같이 찾고 싶다",
+      "gold": {
+        "primary_tables": ["DEMIS_OWNER.TB_MED_ORD", "DEMIS_OWNER.TB_MED_ADM"],
+        "acceptable_tables": ["DEMIS_OWNER.TB_ORD_DTL"]
+      }
+    },
+    {
+      "id": "OQ022",
+      "category": "paraphrase",
+      "query": "inpatient admission과 ward 이력은 어디에서 조회하나?",
+      "gold": {
+        "primary_tables": ["DEMIS_OWNER.TB_ADM_HIST"],
+        "acceptable_tables": ["DEMIS_OWNER.TB_ENC_HIST"],
+        "relevant_columns": ["DEMIS_OWNER.TB_ADM_HIST.WARD_CD"]
+      }
+    },
+    {
+      "id": "OQ023",
+      "category": "paraphrase",
+      "query": "principal diagnosis와 진단 상세 내역을 같이 보고 싶다",
+      "gold": {
+        "primary_tables": ["DEMIS_OWNER.TB_DX_HIST"],
+        "acceptable_tables": ["DEMIS_OWNER.TB_DX_DTL"],
+        "relevant_columns": ["DEMIS_OWNER.TB_DX_HIST.MAIN_DX_YN", "DEMIS_OWNER.TB_DX_HIST.DX_CD"]
+      }
+    },
+    {
+      "id": "OQ024",
+      "category": "paraphrase",
+      "query": "discharge summary narrative는 어느 테이블에 있나?",
+      "gold": {
+        "primary_tables": ["DEMIS_OWNER.TB_DISCH_SUM"],
+        "acceptable_tables": ["DEMIS_OWNER.TB_DISCH_HIST"]
+      }
+    },
+    {
+      "id": "OQ025",
+      "category": "paraphrase",
+      "query": "service member의 unit assignment 정보를 찾고 싶다",
+      "gold": {
+        "primary_tables": ["DEMIS_OWNER.TB_SVC_MEMBER", "DEMIS_OWNER.TB_UNIT_MST"],
+        "acceptable_tables": ["DEMIS_OWNER.TB_PT_MST"]
+      }
+    },
+    {
+      "id": "OQ026",
+      "category": "paraphrase",
+      "query": "환자 phone/contact와 address 정보를 어디서 조회하나?",
+      "gold": {
+        "primary_tables": ["DEMIS_OWNER.TB_PT_CONTACT", "DEMIS_OWNER.TB_PT_ADDR"],
+        "acceptable_tables": ["DEMIS_OWNER.TB_PT_MST"]
+      }
+    },
+    {
+      "id": "OQ027",
+      "category": "schema_semantic",
+      "query": "환자 내부 식별자, 환자번호, 군 복무 식별번호가 저장된 컬럼을 찾고 싶다",
+      "gold": {
+        "primary_tables": ["DEMIS_OWNER.TB_PT_MST"],
+        "relevant_columns": ["DEMIS_OWNER.TB_PT_MST.PT_ID", "DEMIS_OWNER.TB_PT_MST.PT_NO", "DEMIS_OWNER.TB_PT_MST.SVC_NO"]
+      }
+    },
+    {
+      "id": "OQ028",
+      "category": "schema_semantic",
+      "query": "Encounter 식별자와 진료유형, 담당 의료진 컬럼은 어디인가?",
+      "gold": {
+        "primary_tables": ["DEMIS_OWNER.TB_ENC_HIST"],
+        "relevant_columns": ["DEMIS_OWNER.TB_ENC_HIST.ENC_ID", "DEMIS_OWNER.TB_ENC_HIST.ENC_TYP_CD", "DEMIS_OWNER.TB_ENC_HIST.DCTR_ID"]
+      }
+    },
+    {
+      "id": "OQ029",
+      "category": "schema_semantic",
+      "query": "입원 병동 코드가 저장된 컬럼을 찾고 싶다",
+      "gold": {
+        "primary_tables": ["DEMIS_OWNER.TB_ADM_HIST"],
+        "relevant_columns": ["DEMIS_OWNER.TB_ADM_HIST.WARD_CD"]
+      }
+    },
+    {
+      "id": "OQ030",
+      "category": "schema_semantic",
+      "query": "진단 코드와 주진단 여부 컬럼은 어디인가?",
+      "gold": {
+        "primary_tables": ["DEMIS_OWNER.TB_DX_HIST"],
+        "relevant_columns": ["DEMIS_OWNER.TB_DX_HIST.DX_CD", "DEMIS_OWNER.TB_DX_HIST.MAIN_DX_YN"]
+      }
+    },
+    {
+      "id": "OQ031",
+      "category": "schema_semantic",
+      "query": "검사결과의 이상 여부를 표시하는 컬럼을 찾고 싶다",
+      "gold": {
+        "primary_tables": ["DEMIS_OWNER.TB_LAB_RST"],
+        "relevant_columns": ["DEMIS_OWNER.TB_LAB_RST.ABN_FLAG_CD"]
+      }
+    },
+    {
+      "id": "OQ032",
+      "category": "schema_semantic",
+      "query": "약제 처방의 용량, 용량 단위, 투약 경로 컬럼은 어디인가?",
+      "gold": {
+        "primary_tables": ["DEMIS_OWNER.TB_MED_ORD"],
+        "acceptable_tables": ["DEMIS_OWNER.TB_MED_ADM"],
+        "relevant_columns": ["DEMIS_OWNER.TB_MED_ORD.DOSE_QTY", "DEMIS_OWNER.TB_MED_ORD.DOSE_UNIT_CD", "DEMIS_OWNER.TB_MED_ORD.ROUTE_CD"]
+      }
+    },
+    {
+      "id": "OQ033",
+      "category": "schema_semantic",
+      "query": "영상 판독문의 주요 소견과 판독 결론 텍스트 컬럼을 찾고 싶다",
+      "gold": {
+        "primary_tables": ["DEMIS_OWNER.TB_RAD_RPT"],
+        "relevant_columns": ["DEMIS_OWNER.TB_RAD_RPT.FINDINGS", "DEMIS_OWNER.TB_RAD_RPT.IMPRESSION"]
+      }
+    },
+    {
+      "id": "OQ034",
+      "category": "schema_semantic",
+      "query": "임상검사 결과값과 숫자형 결과값 컬럼은 어디인가?",
+      "gold": {
+        "primary_tables": ["DEMIS_OWNER.TB_LAB_RST"],
+        "relevant_columns": ["DEMIS_OWNER.TB_LAB_RST.RST_VAL", "DEMIS_OWNER.TB_LAB_RST.RST_NUM"]
+      }
+    },
+    {
+      "id": "OQ035",
+      "category": "ambiguous",
+      "query": "검사 결과는 어디서 보나?",
+      "gold": {
+        "primary_tables": ["DEMIS_OWNER.TB_LAB_RST"],
+        "acceptable_tables": ["DEMIS_OWNER.TB_LAB_REF", "DEMIS_OWNER.TB_LAB_ORD", "DEMIS_OWNER.TB_RAD_RPT"]
+      }
+    },
+    {
+      "id": "OQ036",
+      "category": "ambiguous",
+      "query": "진료 기록은 어느 테이블에 있나?",
+      "gold": {
+        "primary_tables": ["DEMIS_OWNER.TB_ENC_HIST"],
+        "acceptable_tables": ["DEMIS_OWNER.TB_CLN_NOTE", "DEMIS_OWNER.TB_SOAP_NOTE"]
+      }
+    },
+    {
+      "id": "OQ037",
+      "category": "ambiguous",
+      "query": "처방 내역을 찾고 싶다",
+      "gold": {
+        "primary_tables": ["DEMIS_OWNER.TB_MED_ORD"],
+        "acceptable_tables": ["DEMIS_OWNER.TB_ORD_HDR", "DEMIS_OWNER.TB_ORD_DTL", "DEMIS_OWNER.TB_LAB_ORD", "DEMIS_OWNER.TB_RAD_ORD"]
+      }
+    },
+    {
+      "id": "OQ038",
+      "category": "ambiguous",
+      "query": "환자 정보를 확인하려면 어디를 봐야 하나?",
+      "gold": {
+        "primary_tables": ["DEMIS_OWNER.TB_PT_MST"],
+        "acceptable_tables": ["DEMIS_OWNER.TB_PT_ADDR", "DEMIS_OWNER.TB_PT_CONTACT", "DEMIS_OWNER.TB_SVC_MEMBER"]
+      }
+    },
+    {
+      "id": "OQ039",
+      "category": "relation",
+      "query": "환자 기본정보에서 진료 이력을 거쳐 진단 이력까지 연결되는 테이블 관계를 찾고 싶다",
+      "gold": {
+        "primary_tables": ["DEMIS_OWNER.TB_PT_MST"],
+        "relation_tables": ["DEMIS_OWNER.TB_ENC_HIST", "DEMIS_OWNER.TB_DX_HIST"],
+        "gold_relation_paths": [["DEMIS_OWNER.TB_PT_MST", "DEMIS_OWNER.TB_ENC_HIST", "DEMIS_OWNER.TB_DX_HIST"]]
+      }
+    },
+    {
+      "id": "OQ040",
+      "category": "relation",
+      "query": "진료 오더에서 임상검사 요청과 검사결과까지 이어지는 관계 경로를 찾고 싶다",
+      "gold": {
+        "primary_tables": ["DEMIS_OWNER.TB_ORD_HDR"],
+        "relation_tables": ["DEMIS_OWNER.TB_ORD_DTL", "DEMIS_OWNER.TB_LAB_ORD", "DEMIS_OWNER.TB_LAB_RST"],
+        "gold_relation_paths": [["DEMIS_OWNER.TB_ORD_HDR", "DEMIS_OWNER.TB_ORD_DTL", "DEMIS_OWNER.TB_LAB_ORD", "DEMIS_OWNER.TB_LAB_RST"]]
+      }
+    },
+    {
+      "id": "OQ041",
+      "category": "relation",
+      "query": "진료 오더에서 영상검사 요청을 거쳐 판독 결과까지 이어지는 관계 경로를 찾고 싶다",
+      "gold": {
+        "primary_tables": ["DEMIS_OWNER.TB_ORD_HDR"],
+        "relation_tables": ["DEMIS_OWNER.TB_ORD_DTL", "DEMIS_OWNER.TB_RAD_ORD", "DEMIS_OWNER.TB_RAD_RPT"],
+        "gold_relation_paths": [["DEMIS_OWNER.TB_ORD_HDR", "DEMIS_OWNER.TB_ORD_DTL", "DEMIS_OWNER.TB_RAD_ORD", "DEMIS_OWNER.TB_RAD_RPT"]]
+      }
+    },
+    {
+      "id": "OQ042",
+      "category": "relation",
+      "query": "진료 오더에서 약제 처방을 거쳐 실제 투약 이력까지 연결되는 관계 경로를 찾고 싶다",
+      "gold": {
+        "primary_tables": ["DEMIS_OWNER.TB_ORD_HDR"],
+        "relation_tables": ["DEMIS_OWNER.TB_ORD_DTL", "DEMIS_OWNER.TB_MED_ORD", "DEMIS_OWNER.TB_MED_ADM"],
+        "gold_relation_paths": [["DEMIS_OWNER.TB_ORD_HDR", "DEMIS_OWNER.TB_ORD_DTL", "DEMIS_OWNER.TB_MED_ORD", "DEMIS_OWNER.TB_MED_ADM"]]
+      }
+    }
+  ]
+}
