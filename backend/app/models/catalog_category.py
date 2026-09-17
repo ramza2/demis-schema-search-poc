@@ -11,6 +11,7 @@ from sqlalchemy import (
     DateTime,
     Float,
     ForeignKey,
+    Index,
     Integer,
     String,
     Text,
@@ -28,6 +29,7 @@ class CatalogCategory(CatalogBase):
     __tablename__ = "catalog_category"
     __table_args__ = (
         UniqueConstraint("source_id", "category_key", name="uq_catalog_category_source_key"),
+        Index("ix_catalog_category_source", "source_id", "active", "sort_order"),
     )
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
@@ -63,6 +65,8 @@ class CatalogTableCategory(CatalogBase):
             "assignment_source IN ('MANUAL', 'AUTO', 'IMPORT')",
             name="ck_catalog_table_category_assignment_source",
         ),
+        Index("ix_catalog_table_category_table", "table_id"),
+        Index("ix_catalog_table_category_category", "category_id"),
     )
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
