@@ -9,10 +9,10 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Runtime modules imported by the Streamlit entry points.
-COPY app.py helpers.py target_dashboard.py table_explorer.py ./
+COPY app.py helpers.py target_dashboard.py table_explorer.py erd_explorer.py ./
 COPY pages ./pages
 # Fail the image build if a local import used by the pages is missing from /app.
-RUN python -c "import helpers, target_dashboard, table_explorer"
+RUN python -c "import helpers, target_dashboard, table_explorer, erd_explorer"
 
 EXPOSE 8501
 
