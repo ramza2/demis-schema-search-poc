@@ -8,10 +8,11 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Runtime modules imported by app.py (keep explicit — do not rely on full-tree COPY).
-COPY app.py helpers.py target_dashboard.py ./
-# Fail the image build if a local import used by app.py is missing from /app.
-RUN python -c "import helpers, target_dashboard"
+# Runtime modules imported by the Streamlit entry points.
+COPY app.py helpers.py target_dashboard.py table_explorer.py ./
+COPY pages ./pages
+# Fail the image build if a local import used by the pages is missing from /app.
+RUN python -c "import helpers, target_dashboard, table_explorer"
 
 EXPOSE 8501
 
