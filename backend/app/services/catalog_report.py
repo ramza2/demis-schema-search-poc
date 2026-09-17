@@ -57,6 +57,15 @@ def _table_key(table: CatalogTable) -> str:
     return f"{table.schema_name}.{table.table_name}"
 
 
+def _single_schema_name(tables: list[CatalogTable]) -> str | None:
+    schema_names = {str(table.schema_name) for table in tables if table.schema_name}
+    return next(iter(schema_names)) if len(schema_names) == 1 else None
+
+
+def _summary_table_name(table: CatalogTable, single_schema: str | None) -> str:
+    return table.table_name if single_schema else _table_key(table)
+
+
 def _format_data_type(column: CatalogColumn) -> str:
     base = _safe_text(column.data_type)
     if column.character_maximum_length is not None:
@@ -95,7 +104,13 @@ def _set_repeat_table_header(row) -> None:
     tr_pr.append(tbl_header)
 
 
-def _add_table(document: Document, headers: list[str], rows: list[list[Any]], *, font_size: float = 8.0):
+def _add_table(
+    document: Document,
+    headers: list[str],
+    rows: list[list[Any]],
+    *,
+    font_size: float = 8.0,
+):
     table = document.add_table(rows=1, cols=len(headers))
     table.style = "Table Grid"
     header = table.rows[0]
@@ -123,14 +138,23 @@ def _set_doc_defaults(document: Document) -> None:
     normal.font.size = Pt(9.5)
     normal._element.rPr.rFonts.set(qn("w:eastAsia"), "맑은 고딕")
 
-    for style_name, size in [("Title", 22), ("Heading 1", 16), ("Heading 2", 13), ("Heading 3", 11)]:
+    for style_name, size in [
+        ("Title", 22),
+        ("Heading 1", 16),
+        ("Heading 2", 13),
+        ("Heading 3", 11),
+    ]:
         style = styles[style_name]
         style.font.name = "Malgun Gothic"
         style.font.size = Pt(size)
         style._element.rPr.rFonts.set(qn("w:eastAsia"), "맑은 고딕")
 
 
-def _add_cover(document: Document, source: CatalogSource, latest_success: CatalogAnalysisRun | None) -> None:
+def _add_cover(
+    document: Document,
+    source: CatalogSource,
+    latest_success: CatalogAnalysisRun | None,
+) -> None:
     p = document.add_paragraph()
     p.alignment = WD_ALIGN_PARAGRAPH.CENTER
     p.space_after = Pt(18)
@@ -193,6 +217,7 @@ def build_db_analysis_report(session: Session, source_id: int) -> CatalogReportR
     ).all()
     table_by_id = {int(table.id): table for table in tables}
     table_ids = list(table_by_id)
+    single_schema = _single_schema_name(tables)
 
     columns: list[CatalogColumn] = []
     indexes: list[CatalogIndex] = []
@@ -294,8 +319,8 @@ def build_db_analysis_report(session: Session, source_id: int) -> CatalogReportR
         relation_rows.append(
             [
                 relation.constraint_name,
-                _table_key(source_table),
-                _table_key(target_table),
+                _summary_table_name(source_table, single_schema),
+                _summary_table_name(target_table, single_schema),
                 relation.relation_type,
                 ", ".join(mapping) or "-",
             ]
@@ -363,6 +388,8 @@ def build_db_analysis_report(session: Session, source_id: int) -> CatalogReportR
         "Table/Column 설명은 DB COMMENT가 실제 존재하는 경우에만 DB_COMMENT로 표기합니다.",
         "Category는 물리 DB 사실과 분리된 의미 메타데이터이며, MANUAL/AUTO/IMPORT assignment_source를 유지합니다.",
         "DB COMMENT가 없는 항목에 대해 Table명/Column명만으로 업무 의미를 자동 생성하지 않습니다.",
+        "자기참조 FK는 상세 관계에서 SELF로 표시하며 Outbound/Inbound 집계에는 각각 포함합니다.",
+        "단일 Schema 보고서의 요약표에서는 가독성을 위해 Schema 접두어를 생략하고 상세 명세에서는 전체 Schema.Table을 유지합니다.",
         "보고서에는 접속 Host, Username, Password, Connection Option 등 Target 연결 비밀정보를 포함하지 않습니다.",
     ]:
         document.add_paragraph(text, style="List Bullet")
@@ -382,26 +409,41 @@ def build_db_analysis_report(session: Session, source_id: int) -> CatalogReportR
                 suffix = "*" if mapping.is_primary else ""
                 category_names.append(f"{category.category_name}{suffix}")
         comment = f"[DB_COMMENT] {table.table_comment}" if table.table_comment else "-"
-        table_summary_rows.append(
-            [
-                no,
-                table.schema_name,
-                table.table_name,
-                table.table_type,
-                len(columns_by_table.get(int(table.id), [])),
-                ", ".join(pk_columns) or "-",
-                comment,
-                ", ".join(category_names) or "-",
-            ]
-        )
-    _add_table(
-        document,
-        ["#", "Schema", "Table", "Type", "Columns", "PK", "Comment", "Category"],
-        table_summary_rows,
-        font_size=7.2,
-    )
+        if single_schema:
+            table_summary_rows.append(
+                [
+                    no,
+                    table.table_name,
+                    table.table_type,
+                    len(columns_by_table.get(int(table.id), [])),
+                    ", ".join(pk_columns) or "-",
+                    comment,
+                    ", ".join(category_names) or "-",
+                ]
+            )
+        else:
+            table_summary_rows.append(
+                [
+                    no,
+                    table.schema_name,
+                    table.table_name,
+                    table.table_type,
+                    len(columns_by_table.get(int(table.id), [])),
+                    ", ".join(pk_columns) or "-",
+                    comment,
+                    ", ".join(category_names) or "-",
+                ]
+            )
+    if single_schema:
+        document.add_paragraph(f"Schema: {single_schema} (단일 Schema)")
+        table_headers = ["#", "Table", "Type", "Columns", "PK", "Comment", "Category"]
+    else:
+        table_headers = ["#", "Schema", "Table", "Type", "Columns", "PK", "Comment", "Category"]
+    _add_table(document, table_headers, table_summary_rows, font_size=7.2)
 
     document.add_heading("3. 관계(FK) 요약", level=1)
+    if single_schema:
+        document.add_paragraph(f"Schema: {single_schema} (단일 Schema, Source/Target 접두어 생략)")
     if relation_rows:
         _add_table(
             document,
@@ -413,6 +455,8 @@ def build_db_analysis_report(session: Session, source_id: int) -> CatalogReportR
         document.add_paragraph("활성 FK 관계가 없습니다.")
 
     document.add_heading("4. Index 요약", level=1)
+    if single_schema:
+        document.add_paragraph(f"Schema: {single_schema} (단일 Schema, Table 접두어 생략)")
     index_rows: list[list[Any]] = []
     for index in indexes:
         table = table_by_id.get(int(index.table_id))
@@ -420,7 +464,7 @@ def build_db_analysis_report(session: Session, source_id: int) -> CatalogReportR
             continue
         index_rows.append(
             [
-                _table_key(table),
+                _summary_table_name(table, single_schema),
                 index.index_name,
                 "Y" if index.is_unique else "N",
                 index.index_method or "-",
@@ -464,7 +508,7 @@ def build_db_analysis_report(session: Session, source_id: int) -> CatalogReportR
                 continue
             assignment_rows.append(
                 [
-                    _table_key(table),
+                    _summary_table_name(table, single_schema),
                     category.category_name,
                     "Y" if mapping.is_primary else "N",
                     mapping.assignment_source,
@@ -472,6 +516,8 @@ def build_db_analysis_report(session: Session, source_id: int) -> CatalogReportR
                     mapping.note or "-",
                 ]
             )
+        if single_schema and assignment_rows:
+            document.add_paragraph(f"Schema: {single_schema} (단일 Schema, Table 접두어 생략)")
         if assignment_rows:
             _add_table(
                 document,
@@ -591,8 +637,21 @@ def build_db_analysis_report(session: Session, source_id: int) -> CatalogReportR
                     target_column = column_by_id.get(int(item.target_column_id))
                     if source_column is not None and target_column is not None:
                         mapping.append(f"{source_column.column_name} → {target_column.column_name}")
-                direction = "OUT" if int(relation.source_table_id) == int(table.id) else "IN"
-                peer = target_table if direction == "OUT" else source_table
+
+                is_self = (
+                    int(relation.source_table_id) == int(table.id)
+                    and int(relation.target_table_id) == int(table.id)
+                )
+                if is_self:
+                    direction = "SELF"
+                    peer = table
+                elif int(relation.source_table_id) == int(table.id):
+                    direction = "OUT"
+                    peer = target_table
+                else:
+                    direction = "IN"
+                    peer = source_table
+
                 detail_relation_rows.append(
                     [
                         direction,
