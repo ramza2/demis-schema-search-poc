@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import unittest
 
-from erd_explorer import filter_graph, hop_distances, relation_rows, render_svg_html
+from erd_explorer import build_component_payload, filter_graph, hop_distances, relation_rows
 
 
 NODES = [
@@ -45,13 +45,30 @@ class ErdExplorerHelpersTest(unittest.TestCase):
         nodes, _, _ = filter_graph(NODES, EDGES, mode="full", text_query="lab")
         self.assertEqual([node["id"] for node in nodes], [4])
 
-    def test_relation_rows_and_svg_are_human_readable(self) -> None:
+    def test_relation_rows_and_component_contract(self) -> None:
         rows = relation_rows(EDGES)
         self.assertEqual(rows[0]["Mapping"], "PT_ID → PT_ID")
-        html = render_svg_html(NODES[:3], EDGES, selected_id=1, distances={1: 0, 2: 1, 3: 2})
-        self.assertIn("TB_PT_MST", html)
-        self.assertIn("FK_ENC_PT", html)
-        self.assertIn("<svg", html)
+
+        full = build_component_payload(
+            NODES[:3],
+            EDGES,
+            mode="full",
+            selected_id=1,
+            distances={1: 0, 2: 1, 3: 2},
+        )
+        self.assertEqual(full["selectedId"], 1)
+        self.assertEqual(full["distances"], {"1": 0, "2": 1, "3": 2})
+        self.assertFalse(full["showEdgeLabels"])
+        self.assertEqual(len(full["nodes"]), 3)
+
+        neighborhood = build_component_payload(
+            NODES[:3],
+            EDGES,
+            mode="neighborhood",
+            selected_id=1,
+            distances={1: 0, 2: 1, 3: 2},
+        )
+        self.assertTrue(neighborhood["showEdgeLabels"])
 
 
 if __name__ == "__main__":
