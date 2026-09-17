@@ -4,7 +4,19 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import BigInteger, Boolean, DateTime, Float, ForeignKey, Integer, String, Text, UniqueConstraint, func
+from sqlalchemy import (
+    BigInteger,
+    Boolean,
+    CheckConstraint,
+    DateTime,
+    Float,
+    ForeignKey,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+    func,
+)
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.catalog import CatalogBase
@@ -43,6 +55,14 @@ class CatalogTableCategory(CatalogBase):
     __tablename__ = "catalog_table_category"
     __table_args__ = (
         UniqueConstraint("table_id", "category_id", name="uq_catalog_table_category"),
+        CheckConstraint(
+            "confidence IS NULL OR (confidence >= 0.0 AND confidence <= 1.0)",
+            name="ck_catalog_table_category_confidence",
+        ),
+        CheckConstraint(
+            "assignment_source IN ('MANUAL', 'AUTO', 'IMPORT')",
+            name="ck_catalog_table_category_assignment_source",
+        ),
     )
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
