@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 CATEGORY_KEY_PATTERN = r"^[a-z0-9][a-z0-9._-]{0,99}$"
@@ -23,6 +23,13 @@ class CategoryUpdate(BaseModel):
     description: str | None = None
     sort_order: int | None = None
     active: bool | None = None
+
+    @model_validator(mode="after")
+    def reject_null_for_nonnullable_fields(self) -> "CategoryUpdate":
+        for field_name in ("category_name", "sort_order", "active"):
+            if field_name in self.model_fields_set and getattr(self, field_name) is None:
+                raise ValueError(f"{field_name} cannot be null")
+        return self
 
 
 class CategoryOut(BaseModel):
