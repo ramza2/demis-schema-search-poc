@@ -11,6 +11,7 @@ from app.db.session import get_catalog_engine, get_catalog_session_factory
 from app.models.catalog import CatalogBase, CatalogSource
 from app.models.catalog_category import CatalogCategory, CatalogTableCategory  # noqa: F401
 from app.models.catalog_history import CatalogAnalysisSnapshot  # noqa: F401
+from app.models.catalog_validation import CatalogPreflightResult  # noqa: F401
 
 
 def ensure_catalog_schema(settings: Settings | None = None) -> None:
@@ -112,8 +113,8 @@ def _update_step_meta(engine: Engine) -> None:
                 """
                 INSERT INTO catalog_meta (meta_key, meta_value)
                 VALUES
-                    ('current_step', 'DEMIS Schema Analyzer - Schema Run Diff'),
-                    ('schema_version', '0.8.0')
+                    ('current_step', 'DEMIS Schema Analyzer - Catalog Package Finalization'),
+                    ('schema_version', '0.9.0')
                 ON CONFLICT (meta_key) DO UPDATE
                 SET meta_value = EXCLUDED.meta_value,
                     updated_at = CURRENT_TIMESTAMP
