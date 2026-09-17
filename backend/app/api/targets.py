@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import logging
+
 from fastapi import APIRouter, HTTPException, Response
 
 from app.models.catalog import CatalogSource
@@ -16,8 +18,10 @@ from app.schemas.target_api import (
     TargetUpdate,
     TestConnectionResponse,
 )
+from app.services.schema_diff_service import SchemaDiffService
 from app.services.target_service import TargetConnectionTimeoutError, TargetService
 
+logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/v1/targets", tags=["targets"])
 
 
@@ -140,6 +144,24 @@ def analyze_target(target_id: int, body: AnalyzeRequest) -> AnalyzeResponse:
         # Connect/probe timeout -> 504; other connection failures -> 502.
         # Post-connect inspect/catalog errors still return FAILED AnalyzeResponse.
         raise _http_from_runtime(exc) from exc
+
+    # Snapshot persistence is intentionally secondary to schema analysis. A successful
+    # analysis must remain SUCCESS even if history capture encounters an operational
+    # issue; the failure is logged and the Run Diff UI will show snapshot unavailable.
+    if run.status == "SUCCESS":
+        try:
+            SchemaDiffService().capture_run(
+                int(run.id),
+                expected_source_id=target_id,
+                capture_mode="ANALYSIS_API",
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.exception(
+                "Schema analysis succeeded but run snapshot capture failed: run_id=%s error=%s",
+                run.id,
+                exc,
+            )
+
     return AnalyzeResponse(
         run_id=run.id,
         status=run.status,
