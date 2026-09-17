@@ -79,8 +79,8 @@ def _create_fixture() -> tuple[int, str, str]:
             status="SUCCESS",
             target_schema="DEMIS_OWNER",
             table_count=2,
-            column_count=3,
-            relation_count=1,
+            column_count=4,
+            relation_count=2,
             index_count=1,
             schema_fingerprint=success_fp,
         )
@@ -140,6 +140,21 @@ def _create_fixture() -> tuple[int, str, str]:
             last_run_id=success_run.id,
             active=True,
         )
+        parent_patient_id = CatalogColumn(
+            table_id=patient.id,
+            ordinal_position=2,
+            column_name="PARENT_PT_ID",
+            data_type="NUMBER",
+            numeric_precision=18,
+            numeric_scale=0,
+            is_nullable=True,
+            column_comment=None,
+            is_primary_key=False,
+            is_unique=False,
+            object_fingerprint=_fp("report-parent-pt-id-" + suffix),
+            last_run_id=success_run.id,
+            active=True,
+        )
         encounter_id = CatalogColumn(
             table_id=encounter.id,
             ordinal_position=1,
@@ -166,7 +181,9 @@ def _create_fixture() -> tuple[int, str, str]:
             last_run_id=success_run.id,
             active=True,
         )
-        session.add_all([patient_id, encounter_id, encounter_patient_id])
+        session.add_all(
+            [patient_id, parent_patient_id, encounter_id, encounter_patient_id]
+        )
         session.flush()
 
         relation = CatalogRelation(
@@ -179,15 +196,33 @@ def _create_fixture() -> tuple[int, str, str]:
             last_run_id=success_run.id,
             active=True,
         )
-        session.add(relation)
+        self_relation = CatalogRelation(
+            source_id=source.id,
+            constraint_name="FK_PT_PARENT",
+            source_table_id=patient.id,
+            target_table_id=patient.id,
+            relation_type="FOREIGN_KEY",
+            object_fingerprint=_fp("report-self-relation-" + suffix),
+            last_run_id=success_run.id,
+            active=True,
+        )
+        session.add_all([relation, self_relation])
         session.flush()
-        session.add(
-            CatalogRelationColumn(
-                relation_id=relation.id,
-                ordinal_position=1,
-                source_column_id=encounter_patient_id.id,
-                target_column_id=patient_id.id,
-            )
+        session.add_all(
+            [
+                CatalogRelationColumn(
+                    relation_id=relation.id,
+                    ordinal_position=1,
+                    source_column_id=encounter_patient_id.id,
+                    target_column_id=patient_id.id,
+                ),
+                CatalogRelationColumn(
+                    relation_id=self_relation.id,
+                    ordinal_position=1,
+                    source_column_id=parent_patient_id.id,
+                    target_column_id=patient_id.id,
+                ),
+            ]
         )
 
         index = CatalogIndex(
@@ -302,6 +337,14 @@ def _document_text(content: bytes) -> str:
     return "\n".join(parts)
 
 
+def _document_tables(content: bytes) -> list[list[list[str]]]:
+    document = Document(io.BytesIO(content))
+    return [
+        [[cell.text for cell in row.cells] for row in table.rows]
+        for table in document.tables
+    ]
+
+
 def test_db_analysis_report_download_uses_latest_success_and_excludes_secrets(
     client: TestClient,
 ) -> None:
@@ -311,7 +354,7 @@ def test_db_analysis_report_download_uses_latest_success_and_excludes_secrets(
         assert metadata_response.status_code == 200, metadata_response.text
         metadata = metadata_response.json()
         assert metadata["counts"]["tables"] == 2
-        assert metadata["counts"]["relations"] == 1
+        assert metadata["counts"]["relations"] == 2
         assert metadata["counts"]["categories"] == 1
         assert metadata["schema_fingerprint"] == success_fp
         assert metadata["schema_fingerprint"] != failed_fp
@@ -330,11 +373,63 @@ def test_db_analysis_report_download_uses_latest_success_and_excludes_secrets(
         assert "TB_PT_MST" in text_content
         assert "TB_ENC_HIST" in text_content
         assert "FK_ENC_PATIENT" in text_content
+        assert "FK_PT_PARENT" in text_content
         assert "IX_ENC_PT_ID" in text_content
         assert "환자 기본정보" in text_content
         assert "MANUAL" in text_content
+        assert "자기참조 FK는 상세 관계에서 SELF로 표시" in text_content
         assert success_fp in text_content
         assert failed_fp not in text_content
+
+        tables = _document_tables(response.content)
+
+        table_summary = next(
+            table
+            for table in tables
+            if table and table[0] == ["#", "Table", "Type", "Columns", "PK", "Comment", "Category"]
+        )
+        assert all("Schema" not in cell for cell in table_summary[0])
+        assert {row[1] for row in table_summary[1:]} == {"TB_ENC_HIST", "TB_PT_MST"}
+
+        relation_summary = next(
+            table
+            for table in tables
+            if table
+            and table[0] == ["Constraint", "Source", "Target", "Type", "Column Mapping"]
+        )
+        enc_relation = next(row for row in relation_summary[1:] if row[0] == "FK_ENC_PATIENT")
+        assert enc_relation[1] == "TB_ENC_HIST"
+        assert enc_relation[2] == "TB_PT_MST"
+        self_summary = next(row for row in relation_summary[1:] if row[0] == "FK_PT_PARENT")
+        assert self_summary[1] == "TB_PT_MST"
+        assert self_summary[2] == "TB_PT_MST"
+
+        index_summary = next(
+            table
+            for table in tables
+            if table and table[0] == ["Table", "Index", "Unique", "Method", "Columns"]
+        )
+        index_row = next(row for row in index_summary[1:] if row[1] == "IX_ENC_PT_ID")
+        assert index_row[0] == "TB_ENC_HIST"
+
+        category_assignments = next(
+            table
+            for table in tables
+            if table
+            and table[0] == ["Table", "Category", "Primary", "Source", "Confidence", "Note"]
+        )
+        assert category_assignments[1][0] == "TB_PT_MST"
+
+        self_detail_rows = [
+            row
+            for table in tables
+            if table and table[0] == ["Direction", "Constraint", "Related Table", "Mapping"]
+            for row in table[1:]
+            if row[1] == "FK_PT_PARENT"
+        ]
+        assert self_detail_rows == [
+            ["SELF", "FK_PT_PARENT", "DEMIS_OWNER.TB_PT_MST", "PARENT_PT_ID → PT_ID"]
+        ]
 
         for secret in [
             "SECRET_REPORT_HOST",
