@@ -272,6 +272,115 @@ def _create_fixture() -> tuple[int, str, str]:
         session.close()
 
 
+def _create_multi_schema_fixture() -> int:
+    suffix = uuid.uuid4().hex[:8]
+    session = get_catalog_session_factory()()
+    try:
+        source = CatalogSource(
+            source_name=f"report_multi_{suffix}",
+            db_type="oracle",
+            host="localhost",
+            port=1521,
+            database_name="FREEPDB1",
+            default_schema="DEMIS_OWNER",
+            username="fixture",
+            encrypted_password=None,
+            connection_options=None,
+            enabled=True,
+        )
+        session.add(source)
+        session.flush()
+        run = CatalogAnalysisRun(
+            source_id=source.id,
+            status="SUCCESS",
+            target_schema="DEMIS_OWNER",
+            table_count=2,
+            column_count=2,
+            relation_count=1,
+            index_count=0,
+            schema_fingerprint=_fp("report-multi-run-" + suffix),
+        )
+        session.add(run)
+        session.flush()
+
+        left = CatalogTable(
+            source_id=source.id,
+            schema_name="DEMIS_OWNER",
+            table_name="TB_LEFT",
+            table_type="BASE TABLE",
+            table_comment=None,
+            object_fingerprint=_fp("report-left-" + suffix),
+            last_run_id=run.id,
+            active=True,
+        )
+        right = CatalogTable(
+            source_id=source.id,
+            schema_name="REF_OWNER",
+            table_name="TB_RIGHT",
+            table_type="BASE TABLE",
+            table_comment=None,
+            object_fingerprint=_fp("report-right-" + suffix),
+            last_run_id=run.id,
+            active=True,
+        )
+        session.add_all([left, right])
+        session.flush()
+
+        left_id = CatalogColumn(
+            table_id=left.id,
+            ordinal_position=1,
+            column_name="RIGHT_ID",
+            data_type="NUMBER",
+            is_nullable=False,
+            column_comment=None,
+            is_primary_key=False,
+            is_unique=False,
+            object_fingerprint=_fp("report-left-id-" + suffix),
+            last_run_id=run.id,
+            active=True,
+        )
+        right_id = CatalogColumn(
+            table_id=right.id,
+            ordinal_position=1,
+            column_name="RIGHT_ID",
+            data_type="NUMBER",
+            is_nullable=False,
+            column_comment=None,
+            is_primary_key=True,
+            is_unique=True,
+            object_fingerprint=_fp("report-right-id-" + suffix),
+            last_run_id=run.id,
+            active=True,
+        )
+        session.add_all([left_id, right_id])
+        session.flush()
+
+        relation = CatalogRelation(
+            source_id=source.id,
+            constraint_name="FK_LEFT_RIGHT",
+            source_table_id=left.id,
+            target_table_id=right.id,
+            relation_type="FOREIGN_KEY",
+            object_fingerprint=_fp("report-multi-relation-" + suffix),
+            last_run_id=run.id,
+            active=True,
+        )
+        session.add(relation)
+        session.flush()
+        session.add(
+            CatalogRelationColumn(
+                relation_id=relation.id,
+                ordinal_position=1,
+                source_column_id=left_id.id,
+                target_column_id=right_id.id,
+            )
+        )
+        session.commit()
+        return int(source.id)
+    finally:
+        session.close()
+
+
 def _cleanup(source_id: int) -> None:
     session = get_catalog_session_factory()()
     try:
@@ -438,6 +547,37 @@ def test_db_analysis_report_download_uses_latest_success_and_excludes_secrets(
             "DO_NOT_REPORT",
         ]:
             assert secret not in text_content
+    finally:
+        _cleanup(source_id)
+
+
+def test_db_analysis_report_multi_schema_keeps_qualified_summary_names(
+    client: TestClient,
+) -> None:
+    source_id = _create_multi_schema_fixture()
+    try:
+        response = client.get(f"/api/v1/catalog/report/{source_id}/download")
+        assert response.status_code == 200, response.text
+        tables = _document_tables(response.content)
+
+        table_summary = next(
+            table
+            for table in tables
+            if table
+            and table[0]
+            == ["#", "Schema", "Table", "Type", "Columns", "PK", "Comment", "Category"]
+        )
+        assert {row[1] for row in table_summary[1:]} == {"DEMIS_OWNER", "REF_OWNER"}
+
+        relation_summary = next(
+            table
+            for table in tables
+            if table
+            and table[0] == ["Constraint", "Source", "Target", "Type", "Column Mapping"]
+        )
+        relation_row = next(row for row in relation_summary[1:] if row[0] == "FK_LEFT_RIGHT")
+        assert relation_row[1] == "DEMIS_OWNER.TB_LEFT"
+        assert relation_row[2] == "REF_OWNER.TB_RIGHT"
     finally:
         _cleanup(source_id)
 
