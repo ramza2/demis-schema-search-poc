@@ -37,9 +37,12 @@ def target_label(target: dict[str, Any]) -> str:
 def credential_payload(target: dict[str, Any]) -> dict[str, str] | None:
     if target.get("has_saved_password"):
         return {}
-    if st.session_state.get("preflight_passwordless", False):
+    target_id = int(target["id"])
+    passwordless_key = f"preflight_passwordless_{target_id}"
+    password_key = f"preflight_password_{target_id}"
+    if st.session_state.get(passwordless_key, False):
         return {"password": ""}
-    password = st.session_state.get("preflight_password", "")
+    password = st.session_state.get(password_key, "")
     if password:
         return {"password": str(password)}
     return None
@@ -92,15 +95,17 @@ c4.metric("Credential", "저장됨" if has_saved else "임시 입력 필요")
 
 if not has_saved:
     st.warning("저장된 Credential이 없습니다. 아래 Credential은 이번 요청에만 사용됩니다.")
+    passwordless_key = f"preflight_passwordless_{target_id}"
+    password_key = f"preflight_password_{target_id}"
     passwordless = st.checkbox(
         "빈 비밀번호 사용",
         value=False,
-        key="preflight_passwordless",
+        key=passwordless_key,
     )
     st.text_input(
         "임시 Password",
         type="password",
-        key="preflight_password",
+        key=password_key,
         disabled=passwordless,
     )
 
