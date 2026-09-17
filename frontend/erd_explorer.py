@@ -13,6 +13,7 @@ import streamlit.components.v1 as components
 ApiGet = Callable[..., requests.Response]
 _COMPONENT_NAME = "demis_erd_react_flow"
 _COMPONENT_DIST = Path(__file__).resolve().parent / "erd_component" / "dist"
+_EDGE_LABEL_LIMIT = 16
 
 
 def build_adjacency(edges: list[dict[str, Any]]) -> dict[int, set[int]]:
@@ -119,14 +120,15 @@ def build_component_payload(
     frame_height: int = 760,
 ) -> dict[str, Any]:
     """Build a JSON-safe contract for the React Flow + ELK component."""
+    show_edge_labels = mode == "neighborhood" and len(edges) <= _EDGE_LABEL_LIMIT
     return {
         "nodes": nodes,
         "edges": edges,
         "selectedId": selected_id,
         "distances": {str(node_id): distance for node_id, distance in distances.items()},
         "mode": mode,
-        # Full ERD intentionally hides FK labels; details remain in the table below.
-        "showEdgeLabels": mode == "neighborhood",
+        # Dense graphs keep labels in Relationship Details instead of drawing them on every edge.
+        "showEdgeLabels": show_edge_labels,
         "frameHeight": frame_height,
     }
 
@@ -204,13 +206,13 @@ def render_erd_explorer(*, targets: list[dict[str, Any]], api_get: ApiGet) -> No
         key="erd_query",
     )
 
-    max_hops = 2
+    max_hops = 1
     category_id: int | None = None
     if mode == "neighborhood":
         if selected_id is None:
             st.info("선택 Table 주변 ERD를 보려면 Focus Table을 선택하세요.")
             return
-        max_hops = st.slider("관계 거리", 1, 3, 2, key="erd_hops")
+        max_hops = st.slider("관계 거리", 1, 3, 1, key="erd_hops")
     elif mode == "category":
         if not categories:
             st.info("등록된 Category가 없습니다. Category가 지정된 후 Category ERD를 사용할 수 있습니다.")
@@ -233,6 +235,12 @@ def render_erd_explorer(*, targets: list[dict[str, Any]], api_get: ApiGet) -> No
     v1.metric("Visible Tables", len(visible_nodes))
     v2.metric("Visible Relations", len(visible_edges))
 
+    if mode == "neighborhood" and len(visible_edges) > _EDGE_LABEL_LIMIT:
+        st.caption(
+            f"관계가 {len(visible_edges)}개로 많아 그래프의 FK label은 자동으로 숨겼습니다. "
+            "Constraint와 Column Mapping은 아래 Relationship Details에서 확인할 수 있습니다."
+        )
+
     if not visible_nodes:
         st.info("조건에 맞는 Table이 없습니다.")
     else:
@@ -242,7 +250,7 @@ def render_erd_explorer(*, targets: list[dict[str, Any]], api_get: ApiGet) -> No
             mode=mode,
             selected_id=selected_id,
             distances=distances,
-            frame_height=780 if len(visible_nodes) > 12 else 680,
+            frame_height=820 if len(visible_nodes) > 12 else 700,
         )
         try:
             component = _erd_component()
