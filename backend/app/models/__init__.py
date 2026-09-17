@@ -15,6 +15,7 @@ from app.models.catalog import (
     CatalogSource,
     CatalogTable,
 )
+from app.models.catalog_category import CatalogCategory, CatalogTableCategory
 
 __all__ = [
     "CatalogSource",
@@ -30,4 +31,6 @@ __all__ = [
     "CatalogSearchDocument",
     "CatalogEmbeddingRun",
     "CatalogEmbedding",
+    "CatalogCategory",
+    "CatalogTableCategory",
 ]
