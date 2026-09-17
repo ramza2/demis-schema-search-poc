@@ -70,6 +70,27 @@ class ErdExplorerHelpersTest(unittest.TestCase):
         )
         self.assertTrue(neighborhood["showEdgeLabels"])
 
+        dense_edges = [
+            {
+                "id": 1000 + index,
+                "constraint": f"FK_{index}",
+                "source_id": 2,
+                "target_id": 1,
+                "source_table_key": "DEMIS_OWNER.TB_ENC_HIST",
+                "target_table_key": "DEMIS_OWNER.TB_PT_MST",
+                "column_mapping": [],
+            }
+            for index in range(17)
+        ]
+        dense = build_component_payload(
+            NODES[:2],
+            dense_edges,
+            mode="neighborhood",
+            selected_id=1,
+            distances={1: 0, 2: 1},
+        )
+        self.assertFalse(dense["showEdgeLabels"])
+
 
 if __name__ == "__main__":
     unittest.main()
