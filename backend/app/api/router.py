@@ -12,6 +12,7 @@ from app.api.erd import router as erd_router
 from app.api.health import router as health_router
 from app.api.preflight import router as preflight_router
 from app.api.schema import router as schema_router
+from app.api.schema_diff import router as schema_diff_router
 from app.api.search import router as search_router
 from app.api.targets import router as targets_router
 
@@ -24,5 +25,6 @@ api_router.include_router(catalog_export_router)
 api_router.include_router(catalog_report_router)
 api_router.include_router(targets_router)
 api_router.include_router(preflight_router)
+api_router.include_router(schema_diff_router)
 api_router.include_router(embeddings_router)
 api_router.include_router(search_router)
