@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 from app.core.config import Settings, get_settings
 from app.db.session import get_catalog_engine, get_catalog_session_factory
 from app.models.catalog import CatalogBase, CatalogSource
+from app.models.catalog_category import CatalogCategory, CatalogTableCategory  # noqa: F401
 
 
 def ensure_catalog_schema(settings: Settings | None = None) -> None:
@@ -110,8 +111,8 @@ def _update_step_meta(engine: Engine) -> None:
                 """
                 INSERT INTO catalog_meta (meta_key, meta_value)
                 VALUES
-                    ('current_step', 'Multi-DB Target Analyzer + Schema Explorer'),
-                    ('schema_version', '0.6.1')
+                    ('current_step', 'DEMIS Schema Analyzer - Catalog Categories'),
+                    ('schema_version', '0.7.0')
                 ON CONFLICT (meta_key) DO UPDATE
                 SET meta_value = EXCLUDED.meta_value,
                     updated_at = CURRENT_TIMESTAMP
