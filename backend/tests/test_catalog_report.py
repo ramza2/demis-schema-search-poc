@@ -495,7 +495,9 @@ def test_db_analysis_report_download_uses_latest_success_and_excludes_secrets(
         table_summary = next(
             table
             for table in tables
-            if table and table[0] == ["#", "Table", "Type", "Columns", "PK", "Comment", "Category"]
+            if table
+            and table[0]
+            == ["#", "Table", "Type", "Columns", "PK", "Comment", "Category"]
         )
         assert all("Schema" not in cell for cell in table_summary[0])
         assert {row[1] for row in table_summary[1:]} == {"TB_ENC_HIST", "TB_PT_MST"}
@@ -504,12 +506,17 @@ def test_db_analysis_report_download_uses_latest_success_and_excludes_secrets(
             table
             for table in tables
             if table
-            and table[0] == ["Constraint", "Source", "Target", "Type", "Column Mapping"]
+            and table[0]
+            == ["Constraint", "Source", "Target", "Type", "Column Mapping"]
         )
-        enc_relation = next(row for row in relation_summary[1:] if row[0] == "FK_ENC_PATIENT")
+        enc_relation = next(
+            row for row in relation_summary[1:] if row[0] == "FK_ENC_PATIENT"
+        )
         assert enc_relation[1] == "TB_ENC_HIST"
         assert enc_relation[2] == "TB_PT_MST"
-        self_summary = next(row for row in relation_summary[1:] if row[0] == "FK_PT_PARENT")
+        self_summary = next(
+            row for row in relation_summary[1:] if row[0] == "FK_PT_PARENT"
+        )
         assert self_summary[1] == "TB_PT_MST"
         assert self_summary[2] == "TB_PT_MST"
 
@@ -518,21 +525,25 @@ def test_db_analysis_report_download_uses_latest_success_and_excludes_secrets(
             for table in tables
             if table and table[0] == ["Table", "Index", "Unique", "Method", "Columns"]
         )
-        index_row = next(row for row in index_summary[1:] if row[1] == "IX_ENC_PT_ID")
+        index_row = next(
+            row for row in index_summary[1:] if row[1] == "IX_ENC_PT_ID"
+        )
         assert index_row[0] == "TB_ENC_HIST"
 
         category_assignments = next(
             table
             for table in tables
             if table
-            and table[0] == ["Table", "Category", "Primary", "Source", "Confidence", "Note"]
+            and table[0]
+            == ["Table", "Category", "Primary", "Source", "Confidence", "Note"]
         )
         assert category_assignments[1][0] == "TB_PT_MST"
 
         self_detail_rows = [
             row
             for table in tables
-            if table and table[0] == ["Direction", "Constraint", "Related Table", "Mapping"]
+            if table
+            and table[0] == ["Direction", "Constraint", "Related Table", "Mapping"]
             for row in table[1:]
             if row[1] == "FK_PT_PARENT"
         ]
@@ -565,7 +576,16 @@ def test_db_analysis_report_multi_schema_keeps_qualified_summary_names(
             for table in tables
             if table
             and table[0]
-            == ["#", "Schema", "Table", "Type", "Columns", "PK", "Comment", "Category"]
+            == [
+                "#",
+                "Schema",
+                "Table",
+                "Type",
+                "Columns",
+                "PK",
+                "Comment",
+                "Category",
+            ]
         )
         assert {row[1] for row in table_summary[1:]} == {"DEMIS_OWNER", "REF_OWNER"}
 
@@ -573,9 +593,12 @@ def test_db_analysis_report_multi_schema_keeps_qualified_summary_names(
             table
             for table in tables
             if table
-            and table[0] == ["Constraint", "Source", "Target", "Type", "Column Mapping"]
+            and table[0]
+            == ["Constraint", "Source", "Target", "Type", "Column Mapping"]
         )
-        relation_row = next(row for row in relation_summary[1:] if row[0] == "FK_LEFT_RIGHT")
+        relation_row = next(
+            row for row in relation_summary[1:] if row[0] == "FK_LEFT_RIGHT"
+        )
         assert relation_row[1] == "DEMIS_OWNER.TB_LEFT"
         assert relation_row[2] == "REF_OWNER.TB_RIGHT"
     finally:
