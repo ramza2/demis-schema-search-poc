@@ -77,7 +77,13 @@ def _format_data_type(column: CatalogColumn) -> str:
     return base
 
 
-def _set_cell_text(cell, text: Any, *, bold: bool = False, font_size: float = 8.5) -> None:
+def _set_cell_text(
+    cell,
+    text: Any,
+    *,
+    bold: bool = False,
+    font_size: float = 8.5,
+) -> None:
     cell.text = ""
     paragraph = cell.paragraphs[0]
     run = paragraph.add_run(_safe_text(text))
@@ -340,7 +346,10 @@ def build_db_analysis_report(session: Session, source_id: int) -> CatalogReportR
                 CatalogTableCategory.table_id.in_(table_ids),
                 CatalogTableCategory.category_id.in_(list(category_by_id)),
             )
-            .order_by(CatalogTableCategory.table_id, CatalogTableCategory.is_primary.desc())
+            .order_by(
+                CatalogTableCategory.table_id,
+                CatalogTableCategory.is_primary.desc(),
+            )
         ).all()
 
     categories_by_table: dict[int, list[CatalogTableCategory]] = defaultdict(list)
@@ -359,7 +368,10 @@ def build_db_analysis_report(session: Session, source_id: int) -> CatalogReportR
         ["Default Schema", source.default_schema],
         ["최근 성공 분석 Run", latest_success.id if latest_success else "-"],
         ["최근 성공 분석 상태", latest_success.status if latest_success else "-"],
-        ["분석 대상 Schema", latest_success.target_schema if latest_success else source.default_schema],
+        [
+            "분석 대상 Schema",
+            latest_success.target_schema if latest_success else source.default_schema,
+        ],
         ["Schema Fingerprint", latest_success.schema_fingerprint if latest_success else "-"],
         ["분석 시작", _iso(latest_success.started_at) if latest_success else "-"],
         ["분석 종료", _iso(latest_success.finished_at) if latest_success else "-"],
@@ -384,13 +396,34 @@ def build_db_analysis_report(session: Session, source_id: int) -> CatalogReportR
 
     document.add_heading("1.2 정보 출처 및 판정 기준", level=2)
     for text in [
-        "Table·Column·PK/FK·Index 등 물리 구조는 Schema Analyzer가 수집한 Catalog 값을 사용합니다.",
-        "Table/Column 설명은 DB COMMENT가 실제 존재하는 경우에만 DB_COMMENT로 표기합니다.",
-        "Category는 물리 DB 사실과 분리된 의미 메타데이터이며, MANUAL/AUTO/IMPORT assignment_source를 유지합니다.",
-        "DB COMMENT가 없는 항목에 대해 Table명/Column명만으로 업무 의미를 자동 생성하지 않습니다.",
-        "자기참조 FK는 상세 관계에서 SELF로 표시하며 Outbound/Inbound 집계에는 각각 포함합니다.",
-        "단일 Schema 보고서의 요약표에서는 가독성을 위해 Schema 접두어를 생략하고 상세 명세에서는 전체 Schema.Table을 유지합니다.",
-        "보고서에는 접속 Host, Username, Password, Connection Option 등 Target 연결 비밀정보를 포함하지 않습니다.",
+        (
+            "Table·Column·PK/FK·Index 등 물리 구조는 Schema Analyzer가 수집한 "
+            "Catalog 값을 사용합니다."
+        ),
+        (
+            "Table/Column 설명은 DB COMMENT가 실제 존재하는 경우에만 "
+            "DB_COMMENT로 표기합니다."
+        ),
+        (
+            "Category는 물리 DB 사실과 분리된 의미 메타데이터이며, "
+            "MANUAL/AUTO/IMPORT assignment_source를 유지합니다."
+        ),
+        (
+            "DB COMMENT가 없는 항목에 대해 Table명/Column명만으로 업무 의미를 "
+            "자동 생성하지 않습니다."
+        ),
+        (
+            "자기참조 FK는 상세 관계에서 SELF로 표시하며 Outbound/Inbound "
+            "집계에는 각각 포함합니다."
+        ),
+        (
+            "단일 Schema 보고서의 요약표에서는 가독성을 위해 Schema 접두어를 "
+            "생략하고 상세 명세에서는 전체 Schema.Table을 유지합니다."
+        ),
+        (
+            "보고서에는 접속 Host, Username, Password, Connection Option 등 "
+            "Target 연결 비밀정보를 포함하지 않습니다."
+        ),
     ]:
         document.add_paragraph(text, style="List Bullet")
 
@@ -408,7 +441,9 @@ def build_db_analysis_report(session: Session, source_id: int) -> CatalogReportR
             if category is not None:
                 suffix = "*" if mapping.is_primary else ""
                 category_names.append(f"{category.category_name}{suffix}")
-        comment = f"[DB_COMMENT] {table.table_comment}" if table.table_comment else "-"
+        comment = (
+            f"[DB_COMMENT] {table.table_comment}" if table.table_comment else "-"
+        )
         if single_schema:
             table_summary_rows.append(
                 [
@@ -436,14 +471,33 @@ def build_db_analysis_report(session: Session, source_id: int) -> CatalogReportR
             )
     if single_schema:
         document.add_paragraph(f"Schema: {single_schema} (단일 Schema)")
-        table_headers = ["#", "Table", "Type", "Columns", "PK", "Comment", "Category"]
+        table_headers = [
+            "#",
+            "Table",
+            "Type",
+            "Columns",
+            "PK",
+            "Comment",
+            "Category",
+        ]
     else:
-        table_headers = ["#", "Schema", "Table", "Type", "Columns", "PK", "Comment", "Category"]
+        table_headers = [
+            "#",
+            "Schema",
+            "Table",
+            "Type",
+            "Columns",
+            "PK",
+            "Comment",
+            "Category",
+        ]
     _add_table(document, table_headers, table_summary_rows, font_size=7.2)
 
     document.add_heading("3. 관계(FK) 요약", level=1)
     if single_schema:
-        document.add_paragraph(f"Schema: {single_schema} (단일 Schema, Source/Target 접두어 생략)")
+        document.add_paragraph(
+            f"Schema: {single_schema} (단일 Schema, Source/Target 접두어 생략)"
+        )
     if relation_rows:
         _add_table(
             document,
@@ -456,7 +510,9 @@ def build_db_analysis_report(session: Session, source_id: int) -> CatalogReportR
 
     document.add_heading("4. Index 요약", level=1)
     if single_schema:
-        document.add_paragraph(f"Schema: {single_schema} (단일 Schema, Table 접두어 생략)")
+        document.add_paragraph(
+            f"Schema: {single_schema} (단일 Schema, Table 접두어 생략)"
+        )
     index_rows: list[list[Any]] = []
     for index in indexes:
         table = table_by_id.get(int(index.table_id))
@@ -468,7 +524,11 @@ def build_db_analysis_report(session: Session, source_id: int) -> CatalogReportR
                 index.index_name,
                 "Y" if index.is_unique else "N",
                 index.index_method or "-",
-                ", ".join(item.column_name for item in index_columns.get(int(index.id), [])) or "-",
+                ", ".join(
+                    item.column_name
+                    for item in index_columns.get(int(index.id), [])
+                )
+                or "-",
             ]
         )
     if index_rows:
@@ -517,7 +577,9 @@ def build_db_analysis_report(session: Session, source_id: int) -> CatalogReportR
                 ]
             )
         if single_schema and assignment_rows:
-            document.add_paragraph(f"Schema: {single_schema} (단일 Schema, Table 접두어 생략)")
+            document.add_paragraph(
+                f"Schema: {single_schema} (단일 Schema, Table 접두어 생략)"
+            )
         if assignment_rows:
             _add_table(
                 document,
@@ -552,7 +614,12 @@ def build_db_analysis_report(session: Session, source_id: int) -> CatalogReportR
             ["Schema", table.schema_name],
             ["Table", table.table_name],
             ["Type", table.table_type],
-            ["Comment", f"[DB_COMMENT] {table.table_comment}" if table.table_comment else "-"],
+            [
+                "Comment",
+                f"[DB_COMMENT] {table.table_comment}"
+                if table.table_comment
+                else "-",
+            ],
             ["Object Fingerprint", table.object_fingerprint],
             ["Categories", "; ".join(category_texts) or "-"],
             ["Outbound FK", len(outbound_by_table.get(int(table.id), []))],
@@ -578,7 +645,9 @@ def build_db_analysis_report(session: Session, source_id: int) -> CatalogReportR
                     _format_data_type(column),
                     ", ".join(flags) or "-",
                     column.default_value or "-",
-                    f"[DB_COMMENT] {column.column_comment}" if column.column_comment else "-",
+                    f"[DB_COMMENT] {column.column_comment}"
+                    if column.column_comment
+                    else "-",
                 ]
             )
         if detail_column_rows:
@@ -636,7 +705,9 @@ def build_db_analysis_report(session: Session, source_id: int) -> CatalogReportR
                     source_column = column_by_id.get(int(item.source_column_id))
                     target_column = column_by_id.get(int(item.target_column_id))
                     if source_column is not None and target_column is not None:
-                        mapping.append(f"{source_column.column_name} → {target_column.column_name}")
+                        mapping.append(
+                            f"{source_column.column_name} → {target_column.column_name}"
+                        )
 
                 is_self = (
                     int(relation.source_table_id) == int(table.id)
@@ -678,8 +749,10 @@ def build_db_analysis_report(session: Session, source_id: int) -> CatalogReportR
                         "Y" if index.is_unique else "N",
                         index.index_method or "-",
                         ", ".join(
-                            item.column_name for item in index_columns.get(int(index.id), [])
-                        ) or "-",
+                            item.column_name
+                            for item in index_columns.get(int(index.id), [])
+                        )
+                        or "-",
                     ]
                 )
             _add_table(
@@ -693,7 +766,8 @@ def build_db_analysis_report(session: Session, source_id: int) -> CatalogReportR
     document.save(buffer)
 
     safe_source = "".join(
-        ch if ch.isalnum() or ch in {"-", "_"} else "_" for ch in source.source_name
+        ch if ch.isalnum() or ch in {"-", "_"} else "_"
+        for ch in source.source_name
     )
     filename = f"DEMIS_DB_분석서_{safe_source}.docx"
     metadata = {
@@ -706,7 +780,9 @@ def build_db_analysis_report(session: Session, source_id: int) -> CatalogReportR
             "default_schema": source.default_schema,
         },
         "latest_success_run_id": int(latest_success.id) if latest_success else None,
-        "schema_fingerprint": latest_success.schema_fingerprint if latest_success else None,
+        "schema_fingerprint": (
+            latest_success.schema_fingerprint if latest_success else None
+        ),
         "counts": {
             "tables": len(tables),
             "columns": len(columns),
