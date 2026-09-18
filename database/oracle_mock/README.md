@@ -1,6 +1,6 @@
 # Oracle DEMIS Mock
 
-Local/test Oracle Free fixture for DEMIS Schema Analyzer.
+Internal test Oracle Free fixture for DEMIS Schema Analyzer on the GPU server.
 
 It recreates the physical mock schema previously analyzed as:
 
@@ -39,13 +39,9 @@ Username: DEMIS_RO
 Password: value of DEMIS_ORACLE_RO_PASSWORD in .env.lan
 ```
 
-From a SQL client running on the development PC, use:
-
-```text
-Host: 127.0.0.1
-Port: 1522 (or ORACLE_TEST_EXTERNAL_PORT)
-Service: FREEPDB1
-```
+The LAN deployment does not publish Oracle to the GPU server host or LAN.
+Schema Analyzer reaches it only through the internal Docker network at `oracle-test:1521`.
+Use `docker exec` for server-side diagnostics if needed.
 
 Oracle's setup scripts run only when the Oracle data volume is first initialized.
 To rebuild the mock schema from scratch, remove the Oracle test volume and redeploy.
