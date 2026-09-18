@@ -179,7 +179,7 @@ services:
       test:
         [
           "CMD-SHELL",
-          "printf 'WHENEVER SQLERROR EXIT SQL.SQLCODE\\nSELECT COUNT(*) FROM DEMIS_OWNER.TB_PT_MST WHERE 1=0;\\nEXIT;\\n' | sqlplus -s \"DEMIS_RO/${DEMIS_RO_PASSWORD}@//127.0.0.1:1521/FREEPDB1\" >/dev/null 2>&1",
+          "printf 'WHENEVER SQLERROR EXIT SQL.SQLCODE\\nALTER SESSION SET CONTAINER=FREEPDB1;\\nSELECT COUNT(*) FROM DEMIS_OWNER.TB_PT_MST WHERE 1=0;\\nSELECT 1 / COUNT(*) FROM DBA_TAB_PRIVS WHERE OWNER=''DEMIS_OWNER'' AND TABLE_NAME=''TB_PT_MST'' AND GRANTEE=''DEMIS_RO'' AND PRIVILEGE=''SELECT'';\\nEXIT;\\n' | sqlplus -s / as sysdba >/dev/null 2>&1",
         ]
       interval: 15s
       timeout: 10s
