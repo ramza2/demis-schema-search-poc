@@ -175,6 +175,16 @@ services:
       - oracle_test_data:/opt/oracle/oradata
       - ./database/oracle_mock/setup:/opt/oracle/scripts/setup:ro
     shm_size: "1g"
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "printf 'WHENEVER SQLERROR EXIT SQL.SQLCODE\\nSELECT COUNT(*) FROM DEMIS_OWNER.TB_PT_MST WHERE 1=0;\\nEXIT;\\n' | sqlplus -s \"DEMIS_RO/${DEMIS_RO_PASSWORD}@//127.0.0.1:1521/FREEPDB1\" >/dev/null 2>&1",
+        ]
+      interval: 15s
+      timeout: 10s
+      retries: 60
+      start_period: 60s
     networks:
       - demis-net
 
