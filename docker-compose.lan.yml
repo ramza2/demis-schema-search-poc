@@ -12,17 +12,15 @@
 # Exposure policy:
 # - frontend: GPU server LAN IP only
 # - backend: server loopback only
-# - PostgreSQL fixture/catalog: server loopback only
-# - Oracle test DB: Docker network only (no host-published port)
+# - medical/catalog PostgreSQL: Docker network only
+# - Oracle test DB: Docker network only
 
 services:
   medical-db:
-    ports: !override
-      - "127.0.0.1:${MEDICAL_DB_EXTERNAL_PORT:-5433}:5432"
+    ports: !reset []
 
   catalog-db:
-    ports: !override
-      - "127.0.0.1:${CATALOG_DB_EXTERNAL_PORT:-5434}:5432"
+    ports: !reset []
 
   backend:
     ports: !override
