@@ -142,14 +142,16 @@ cmd_deploy() {
 
   wait_for_stack
 
-  local frontend_port
+  local frontend_port backend_port
   frontend_port="$(load_env_value FRONTEND_EXTERNAL_PORT)"
+  backend_port="$(load_env_value BACKEND_EXTERNAL_PORT)"
   frontend_port="${frontend_port:-8501}"
+  backend_port="${backend_port:-8000}"
 
   echo
   echo "Deploy succeeded."
   echo "Schema Analyzer: http://${lan_ip}:${frontend_port}"
-  echo "Backend diagnostic (server only): http://127.0.0.1:$(load_env_value BACKEND_EXTERNAL_PORT | sed 's/^$/8000/')"
+  echo "Backend diagnostic (server only): http://127.0.0.1:${backend_port}"
 
   local oracle_enabled
   oracle_enabled="$(load_env_value ORACLE_TEST_ENABLED)"
