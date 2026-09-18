@@ -1,0 +1,52 @@
+# Oracle DEMIS Mock
+
+Local/test Oracle Free fixture for DEMIS Schema Analyzer.
+
+It recreates the physical mock schema previously analyzed as:
+
+- service: `FREEPDB1`
+- owner schema: `DEMIS_OWNER`
+- read-only analysis user: `DEMIS_RO`
+- 25 tables
+- 206 columns
+- 40 foreign-key relations
+- 19 non-constraint indexes
+- 25 table comments
+- 13 column comments
+
+The fixture contains schema metadata only. It does not seed patient rows.
+
+## Start
+
+The LAN deployment script starts it when:
+
+```text
+ORACLE_TEST_ENABLED=true
+```
+
+in `.env.lan`.
+
+From the backend container, register the target using:
+
+```text
+DBMS: Oracle
+Host: oracle-test
+Port: 1521
+Database / Service: FREEPDB1
+Default Schema: DEMIS_OWNER
+Username: DEMIS_RO
+Password: value of DEMIS_ORACLE_RO_PASSWORD in .env.lan
+```
+
+From a SQL client running on the development PC, use:
+
+```text
+Host: 127.0.0.1
+Port: 1522 (or ORACLE_TEST_EXTERNAL_PORT)
+Service: FREEPDB1
+```
+
+Oracle's setup scripts run only when the Oracle data volume is first initialized.
+To rebuild the mock schema from scratch, remove the Oracle test volume and redeploy.
+
+Do not use these fixture credentials or this database in production.
