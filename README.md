@@ -329,8 +329,8 @@ This mode:
 - does not require public DNS
 - does not require the external Traefik network
 - publishes only the Streamlit frontend on the GPU server's internal IPv4
-- keeps backend/PostgreSQL host ports on server loopback only
-- keeps Oracle test DB on the Docker network only
+- keeps backend host port on server loopback only
+- keeps PostgreSQL and Oracle test DBs on the Docker network only
 - optionally starts the Oracle Free DEMIS mock fixture
 
 ### 21.1 Server setup
@@ -391,8 +391,7 @@ The backend is intentionally host-only:
 http://127.0.0.1:8000
 ```
 
-PostgreSQL fixture/catalog ports are also host-loopback only.
-Oracle is not published to the host at all.
+PostgreSQL fixture/catalog and Oracle are Docker-network-only and are not published to the host.
 
 If the browser cannot reach port 8501, allow TCP 8501 only on the trusted internal network in the GPU server firewall.
 
