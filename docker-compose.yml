@@ -160,6 +160,24 @@ services:
     networks:
       - demis-net
 
+  oracle-test:
+    profiles: ["oracle-test"]
+    image: ${ORACLE_TEST_IMAGE:-container-registry.oracle.com/database/free:latest-lite}
+    container_name: demis-oracle-test
+    environment:
+      ORACLE_PWD: ${ORACLE_TEST_SYS_PASSWORD:-change_me_local_oracle_admin}
+      ORACLE_CHARACTERSET: AL32UTF8
+      DEMIS_OWNER_PASSWORD: ${DEMIS_ORACLE_OWNER_PASSWORD:-change_me_local_owner}
+      DEMIS_RO_PASSWORD: ${DEMIS_ORACLE_RO_PASSWORD:-change_me_local_ro}
+    ports:
+      - "${ORACLE_TEST_EXTERNAL_PORT:-1522}:1521"
+    volumes:
+      - oracle_test_data:/opt/oracle/oradata
+      - ./database/oracle_mock/setup:/opt/oracle/scripts/setup:ro
+    shm_size: "1g"
+    networks:
+      - demis-net
+
   mariadb-test:
     profiles: ["integration-dbs"]
     image: mariadb:11.4
@@ -189,6 +207,7 @@ volumes:
   embedding_model_cache:
   mysql_test_data:
   mariadb_test_data:
+  oracle_test_data:
 
 networks:
   demis-net:
