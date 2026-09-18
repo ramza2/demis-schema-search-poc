@@ -318,3 +318,98 @@ ORACLE_TEST_SERVICE=... pytest backend/tests/test_oracle_live.py -q
 - Backend → Target DB: DBMS 포트만 (PostgreSQL 5432, MySQL/MariaDB 3306, Oracle 1521 등). **스키마 메타데이터 SELECT만** 수행합니다.
 - Prod: 브라우저 → Traefik (443) → frontend:8501 → backend:8000 (내부 DNS). backend/catalog DB 포트는 호스트에 publish하지 않습니다.
 - Traefik Docker network(`TRAEFIK_NETWORK`, 기본 `traefik`)는 사전 생성되어 있어야 합니다.
+
+
+## 21. LAN IP Development / Test Deployment
+
+For local development or internal-network testing, use the LAN override instead of the Traefik production override.
+
+This mode:
+
+- does not require DNS
+- does not require the external Traefik network
+- publishes frontend/backend on the development PC's LAN IPv4 address
+- keeps PostgreSQL fixture/catalog ports loopback-only by default
+- optionally starts the Oracle Free DEMIS mock fixture
+- is intended for trusted internal development networks only
+
+### Windows / Docker Desktop
+
+```powershell
+Copy-Item .env.lan.example .env.lan
+
+# Edit .env.lan:
+# LAN_BIND_IP=<IPv4 shown by ipconfig>
+# TARGET_CREDENTIAL_ENCRYPTION_KEY=<real local Fernet key>
+
+powershell -ExecutionPolicy Bypass -File .\scripts\deploy-lan.ps1
+```
+
+Access:
+
+```text
+Frontend: http://<LAN_BIND_IP>:8501
+Backend : http://<LAN_BIND_IP>:8000
+```
+
+### Linux / WSL / Git Bash
+
+```bash
+cp .env.lan.example .env.lan
+# edit LAN_BIND_IP / passwords / Fernet key
+bash scripts/deploy-lan.sh
+```
+
+The LAN compose is:
+
+```text
+docker-compose.yml
++ docker-compose.lan.yml
+```
+
+Do not combine `docker-compose.lan.yml` with `docker-compose.prod.yml`.
+
+### Oracle test target
+
+With `ORACLE_TEST_ENABLED=true`, the LAN deployment also starts `demis-oracle-test`.
+
+Register the Schema Analyzer target from the UI/API using the Docker-internal address:
+
+```text
+Source name     oracle_demis_mock
+DBMS            oracle
+Host            oracle-test
+Port            1521
+Database/Service FREEPDB1
+Default Schema  DEMIS_OWNER
+Username        DEMIS_RO
+Password        <DEMIS_ORACLE_RO_PASSWORD from .env.lan>
+```
+
+Expected metadata after analysis:
+
+```text
+Tables            25
+Columns           206
+FK relations       40
+Indexes             19
+Table comments      25
+Column comments     13
+Schema fingerprint  97ac64035d5d73ab80feb5c99c9875e247d25c375bec61a7672a3c38137c0df0
+```
+
+The Oracle fixture is metadata-only and contains no patient rows.
+
+Oracle setup scripts run only on first initialization of the Oracle data volume. To rebuild the Oracle mock from scratch:
+
+```powershell
+docker compose --env-file .env.lan -f docker-compose.yml -f docker-compose.lan.yml --profile oracle-test down
+
+docker volume ls | Select-String oracle
+# Remove only this project's Oracle test volume after confirming its exact name.
+docker volume rm demis-schema-search-poc_oracle_test_data
+
+powershell -ExecutionPolicy Bypass -File .\scripts\deploy-lan.ps1
+```
+
+If the repository directory/Compose project name differs, the volume prefix can differ; always confirm with `docker volume ls` before removal.
