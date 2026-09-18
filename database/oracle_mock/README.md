@@ -13,6 +13,7 @@ It recreates the physical mock schema previously analyzed as:
 - 19 non-constraint indexes
 - 25 table comments
 - 13 column comments
+- expected Schema Analyzer fingerprint: `97ac64035d5d73ab80feb5c99c9875e247d25c375bec61a7672a3c38137c0df0`
 
 The fixture contains schema metadata only. It does not seed patient rows.
 
