@@ -1,35 +1,36 @@
-# LAN-only development/test override.
+# GPU-server LAN development/test override.
 #
 # Usage:
 #   cp .env.lan.example .env.lan
-#   # Set LAN_BIND_IP to this development PC's LAN IPv4 address.
+#   # Set LAN_BIND_IP to the GPU server's internal IPv4 address.
 #   ./scripts/deploy-lan.sh
 #
 # This stack intentionally does NOT attach to Traefik and does not require DNS.
-# Application access:
+# Browser access:
 #   http://<LAN_BIND_IP>:<FRONTEND_EXTERNAL_PORT>
 #
-# PostgreSQL fixture/catalog ports stay loopback-only by default.
-# Oracle test DB also stays loopback-only by default; the backend reaches it
-# inside demis-net with host=oracle-test, port=1521.
+# Exposure policy:
+# - frontend: GPU server LAN IP only
+# - backend: server loopback only
+# - PostgreSQL fixture/catalog: server loopback only
+# - Oracle test DB: Docker network only (no host-published port)
 
 services:
   medical-db:
     ports: !override
-      - "${LOCAL_DB_BIND_IP:-127.0.0.1}:${MEDICAL_DB_EXTERNAL_PORT:-5433}:5432"
+      - "127.0.0.1:${MEDICAL_DB_EXTERNAL_PORT:-5433}:5432"
 
   catalog-db:
     ports: !override
-      - "${LOCAL_DB_BIND_IP:-127.0.0.1}:${CATALOG_DB_EXTERNAL_PORT:-5434}:5432"
+      - "127.0.0.1:${CATALOG_DB_EXTERNAL_PORT:-5434}:5432"
 
   backend:
     ports: !override
-      - "${LAN_BIND_IP}:${BACKEND_EXTERNAL_PORT:-8000}:8000"
+      - "127.0.0.1:${BACKEND_EXTERNAL_PORT:-8000}:8000"
 
   frontend:
     ports: !override
       - "${LAN_BIND_IP}:${FRONTEND_EXTERNAL_PORT:-8501}:8501"
 
   oracle-test:
-    ports: !override
-      - "${ORACLE_TEST_BIND_IP:-127.0.0.1}:${ORACLE_TEST_EXTERNAL_PORT:-1522}:1521"
+    ports: !reset []
