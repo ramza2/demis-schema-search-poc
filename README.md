@@ -320,47 +320,85 @@ ORACLE_TEST_SERVICE=... pytest backend/tests/test_oracle_live.py -q
 - Traefik Docker network(`TRAEFIK_NETWORK`, 기본 `traefik`)는 사전 생성되어 있어야 합니다.
 
 
-## 21. LAN IP Development / Test Deployment
+## 21. GPU Server LAN Deployment / Test
 
-For local development or internal-network testing, use the LAN override instead of the Traefik production override.
+For internal development and integration testing, deploy the Schema Analyzer on the existing GPU server with the LAN override instead of the Traefik production override.
 
 This mode:
 
-- does not require DNS
+- does not require public DNS
 - does not require the external Traefik network
-- publishes frontend/backend on the development PC's LAN IPv4 address
-- keeps PostgreSQL fixture/catalog ports loopback-only by default
+- publishes only the Streamlit frontend on the GPU server's internal IPv4
+- keeps backend/PostgreSQL host ports on server loopback only
+- keeps Oracle test DB on the Docker network only
 - optionally starts the Oracle Free DEMIS mock fixture
-- is intended for trusted internal development networks only
 
-### Windows / Docker Desktop
+### 21.1 Server setup
 
-```powershell
-Copy-Item .env.lan.example .env.lan
-
-# Edit .env.lan:
-# LAN_BIND_IP=<IPv4 shown by ipconfig>
-# TARGET_CREDENTIAL_ENCRYPTION_KEY=<real local Fernet key>
-
-powershell -ExecutionPolicy Bypass -File .\scripts\deploy-lan.ps1
-```
-
-Access:
-
-```text
-Frontend: http://<LAN_BIND_IP>:8501
-Backend : http://<LAN_BIND_IP>:8000
-```
-
-### Linux / WSL / Git Bash
+On the GPU server:
 
 ```bash
+git fetch origin
+git checkout feat/lan-ip-deployment
+git pull --ff-only
+
 cp .env.lan.example .env.lan
-# edit LAN_BIND_IP / passwords / Fernet key
-bash scripts/deploy-lan.sh
+
+ip -4 -br addr show
+# or
+hostname -I
 ```
 
-The LAN compose is:
+Edit `.env.lan` and set:
+
+```text
+LAN_BIND_IP=<GPU server internal IPv4>
+```
+
+Generate a Fernet key before storing Target DB credentials:
+
+```bash
+docker run --rm python:3.12-slim sh -c \
+  "pip install -q cryptography && python -c 'from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())'"
+```
+
+Set the generated value:
+
+```text
+TARGET_CREDENTIAL_ENCRYPTION_KEY=<generated key>
+```
+
+Deploy:
+
+```bash
+chmod +x scripts/deploy-lan.sh
+./scripts/deploy-lan.sh
+```
+
+The script validates that `LAN_BIND_IP` is actually assigned to the GPU server before deployment.
+
+### 21.2 Access
+
+From a PC on the same internal network:
+
+```text
+http://<GPU_SERVER_LAN_IP>:8501
+```
+
+The backend is intentionally host-only:
+
+```text
+http://127.0.0.1:8000
+```
+
+PostgreSQL fixture/catalog ports are also host-loopback only.
+Oracle is not published to the host at all.
+
+If the browser cannot reach port 8501, allow TCP 8501 only on the trusted internal network in the GPU server firewall.
+
+### 21.3 Compose mode
+
+The LAN deployment uses:
 
 ```text
 docker-compose.yml
@@ -369,47 +407,59 @@ docker-compose.yml
 
 Do not combine `docker-compose.lan.yml` with `docker-compose.prod.yml`.
 
-### Oracle test target
+Existing Traefik deployment files remain available for deployments that explicitly require external routing.
 
-With `ORACLE_TEST_ENABLED=true`, the LAN deployment also starts `demis-oracle-test`.
+### 21.4 Oracle test target
 
-Register the Schema Analyzer target from the UI/API using the Docker-internal address:
+With `ORACLE_TEST_ENABLED=true`, deployment starts `demis-oracle-test`.
+
+Register the target from Schema Analyzer using the Docker-internal address:
 
 ```text
-Source name     oracle_demis_mock
-DBMS            oracle
-Host            oracle-test
-Port            1521
-Database/Service FREEPDB1
-Default Schema  DEMIS_OWNER
-Username        DEMIS_RO
-Password        <DEMIS_ORACLE_RO_PASSWORD from .env.lan>
+Source name       oracle_demis_mock
+DBMS              Oracle
+Host              oracle-test
+Port              1521
+Database/Service  FREEPDB1
+Default Schema    DEMIS_OWNER
+Username          DEMIS_RO
+Password          <DEMIS_ORACLE_RO_PASSWORD from .env.lan>
 ```
 
 Expected metadata after analysis:
 
 ```text
-Tables            25
-Columns           206
-FK relations       40
-Indexes             19
-Table comments      25
-Column comments     13
-Schema fingerprint  97ac64035d5d73ab80feb5c99c9875e247d25c375bec61a7672a3c38137c0df0
+Tables             25
+Columns            206
+FK relations        40
+Indexes              19
+Table comments       25
+Column comments      13
+Schema fingerprint   97ac64035d5d73ab80feb5c99c9875e247d25c375bec61a7672a3c38137c0df0
 ```
 
-The Oracle fixture is metadata-only and contains no patient rows.
+The Oracle fixture contains schema metadata only and no patient rows.
 
-Oracle setup scripts run only on first initialization of the Oracle data volume. To rebuild the Oracle mock from scratch:
+Oracle setup scripts run only when its data volume is first initialized. To rebuild only the Oracle mock from scratch:
 
-```powershell
-docker compose --env-file .env.lan -f docker-compose.yml -f docker-compose.lan.yml --profile oracle-test down
+```bash
+./scripts/deploy-lan.sh down
 
-docker volume ls | Select-String oracle
-# Remove only this project's Oracle test volume after confirming its exact name.
+docker volume ls | grep -i oracle
+# Confirm the exact volume name before removal.
 docker volume rm demis-schema-search-poc_oracle_test_data
 
-powershell -ExecutionPolicy Bypass -File .\scripts\deploy-lan.ps1
+./scripts/deploy-lan.sh
 ```
 
-If the repository directory/Compose project name differs, the volume prefix can differ; always confirm with `docker volume ls` before removal.
+If the Compose project/directory name differs, the volume prefix may differ. Always confirm the exact volume name before removal.
+
+### 21.5 Operations
+
+```bash
+./scripts/deploy-lan.sh status
+./scripts/deploy-lan.sh logs
+./scripts/deploy-lan.sh down
+```
+
+`down` preserves volumes.
