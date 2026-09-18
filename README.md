@@ -318,3 +318,147 @@ ORACLE_TEST_SERVICE=... pytest backend/tests/test_oracle_live.py -q
 - Backend → Target DB: DBMS 포트만 (PostgreSQL 5432, MySQL/MariaDB 3306, Oracle 1521 등). **스키마 메타데이터 SELECT만** 수행합니다.
 - Prod: 브라우저 → Traefik (443) → frontend:8501 → backend:8000 (내부 DNS). backend/catalog DB 포트는 호스트에 publish하지 않습니다.
 - Traefik Docker network(`TRAEFIK_NETWORK`, 기본 `traefik`)는 사전 생성되어 있어야 합니다.
+
+
+## 21. GPU Server LAN Deployment / Test
+
+For internal development and integration testing, deploy the Schema Analyzer on the existing GPU server with the LAN override instead of the Traefik production override.
+
+This mode:
+
+- does not require public DNS
+- does not require the external Traefik network
+- publishes only the Streamlit frontend on the GPU server's internal IPv4
+- keeps backend host port on server loopback only
+- keeps PostgreSQL and Oracle test DBs on the Docker network only
+- optionally starts the Oracle Free DEMIS mock fixture
+
+### 21.1 Server setup
+
+On the GPU server:
+
+```bash
+git fetch origin
+git checkout feat/lan-ip-deployment
+git pull --ff-only
+
+cp .env.lan.example .env.lan
+
+ip -4 -br addr show
+# or
+hostname -I
+```
+
+Edit `.env.lan` and set:
+
+```text
+LAN_BIND_IP=<GPU server internal IPv4>
+```
+
+Generate a Fernet key before storing Target DB credentials:
+
+```bash
+docker run --rm python:3.12-slim sh -c \
+  "pip install -q cryptography && python -c 'from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())'"
+```
+
+Set the generated value:
+
+```text
+TARGET_CREDENTIAL_ENCRYPTION_KEY=<generated key>
+```
+
+Deploy:
+
+```bash
+chmod +x scripts/deploy-lan.sh
+./scripts/deploy-lan.sh
+```
+
+The script validates that `LAN_BIND_IP` is actually assigned to the GPU server before deployment.
+
+### 21.2 Access
+
+From a PC on the same internal network:
+
+```text
+http://<GPU_SERVER_LAN_IP>:8501
+```
+
+The backend is intentionally host-only:
+
+```text
+http://127.0.0.1:8000
+```
+
+PostgreSQL fixture/catalog and Oracle are Docker-network-only and are not published to the host.
+
+If the browser cannot reach port 8501, allow TCP 8501 only on the trusted internal network in the GPU server firewall.
+
+### 21.3 Compose mode
+
+The LAN deployment uses:
+
+```text
+docker-compose.yml
++ docker-compose.lan.yml
+```
+
+Do not combine `docker-compose.lan.yml` with `docker-compose.prod.yml`.
+
+Existing Traefik deployment files remain available for deployments that explicitly require external routing.
+
+### 21.4 Oracle test target
+
+With `ORACLE_TEST_ENABLED=true`, deployment starts `demis-oracle-test`.
+
+Register the target from Schema Analyzer using the Docker-internal address:
+
+```text
+Source name       oracle_demis_mock
+DBMS              Oracle
+Host              oracle-test
+Port              1521
+Database/Service  FREEPDB1
+Default Schema    DEMIS_OWNER
+Username          DEMIS_RO
+Password          <DEMIS_ORACLE_RO_PASSWORD from .env.lan>
+```
+
+Expected metadata after analysis:
+
+```text
+Tables             25
+Columns            206
+FK relations        40
+Indexes              19
+Table comments       25
+Column comments      13
+Schema fingerprint   97ac64035d5d73ab80feb5c99c9875e247d25c375bec61a7672a3c38137c0df0
+```
+
+The Oracle fixture contains schema metadata only and no patient rows.
+
+Oracle setup scripts run only when its data volume is first initialized. To rebuild only the Oracle mock from scratch:
+
+```bash
+./scripts/deploy-lan.sh down
+
+docker volume ls | grep -i oracle
+# Confirm the exact volume name before removal.
+docker volume rm demis-schema-search-poc_oracle_test_data
+
+./scripts/deploy-lan.sh
+```
+
+If the Compose project/directory name differs, the volume prefix may differ. Always confirm the exact volume name before removal.
+
+### 21.5 Operations
+
+```bash
+./scripts/deploy-lan.sh status
+./scripts/deploy-lan.sh logs
+./scripts/deploy-lan.sh down
+```
+
+`down` preserves volumes.
