@@ -140,7 +140,13 @@ cmd_deploy() {
   echo "Deploy succeeded."
   echo "Frontend: http://${lan_ip}:${frontend_port}"
   echo "Backend : http://${lan_ip}:${backend_port}"
-  echo "Oracle target from backend container: host=oracle-test port=1521 service=FREEPDB1 schema=DEMIS_OWNER"
+
+  local oracle_enabled
+  oracle_enabled="$(load_env_value ORACLE_TEST_ENABLED)"
+  if [[ "${oracle_enabled,,}" == "true" || "$oracle_enabled" == "1" || "${oracle_enabled,,}" == "yes" ]]; then
+    echo "Oracle target: host=oracle-test port=1521 service=FREEPDB1 schema=DEMIS_OWNER user=DEMIS_RO"
+  fi
+
   "${COMPOSE[@]}" ps
 }
 
