@@ -11,17 +11,18 @@ usage() {
   cat <<'EOF'
 Usage: scripts/deploy-lan.sh [deploy|status|logs|down]
 
-  deploy  Validate, build/start LAN stack, wait for health (default)
+  deploy  Validate, build/start GPU-server LAN stack, wait for health (default)
   status  Show stack status
   logs    Follow recent logs
   down    Stop stack without deleting volumes
 
 Environment:
   ENV_FILE=.env.lan
-  LAN_BIND_IP=<development PC LAN IPv4>
+  LAN_BIND_IP=<GPU server internal IPv4>
   ORACLE_TEST_ENABLED=true|false
 
-This deployment does not use Traefik or DNS.
+This deployment does not use Traefik or public DNS.
+Only the frontend is published to the configured LAN IP.
 EOF
 }
 
@@ -59,6 +60,18 @@ build_compose() {
   fi
 }
 
+validate_lan_ip() {
+  local lan_ip="$1"
+  [[ -n "$lan_ip" ]] || die "LAN_BIND_IP must be set in $ENV_FILE"
+  [[ "$lan_ip" != "127.0.0.1" && "$lan_ip" != "0.0.0.0" ]] || die "LAN_BIND_IP must be the GPU server's internal IPv4, not $lan_ip"
+
+  if ! ip -4 addr show 2>/dev/null | grep -Fq "inet ${lan_ip}/"; then
+    echo "Available IPv4 addresses on this server:" >&2
+    ip -4 -br addr show >&2 || true
+    die "LAN_BIND_IP '$lan_ip' is not assigned to this GPU server"
+  fi
+}
+
 print_failure_logs() {
   echo "---- compose ps ----" >&2
   "${COMPOSE[@]}" ps >&2 || true
@@ -71,13 +84,15 @@ wait_for_stack() {
   oracle_enabled="$(load_env_value ORACLE_TEST_ENABLED)"
   local deadline=$((SECONDS + 900))
 
-  echo "Waiting for backend/frontend${oracle_enabled:+ and optional Oracle}..."
+  echo "Waiting for backend/frontend and enabled fixtures..."
   while (( SECONDS < deadline )); do
     local backend_ok=0
     local frontend_ok=0
     local oracle_ok=1
 
-    if "${COMPOSE[@]}" exec -T backend       python -c "import json,urllib.request; p=json.loads(urllib.request.urlopen('http://127.0.0.1:8000/health').read()); assert p.get('status')=='ok' and p.get('backend')=='ok' and p.get('catalog_db')=='ok', p"       >/dev/null 2>&1; then
+    if "${COMPOSE[@]}" exec -T backend \
+      python -c "import json,urllib.request; p=json.loads(urllib.request.urlopen('http://127.0.0.1:8000/health').read()); assert p.get('status')=='ok' and p.get('backend')=='ok' and p.get('catalog_db')=='ok', p" \
+      >/dev/null 2>&1; then
       backend_ok=1
     fi
 
@@ -92,9 +107,7 @@ wait_for_stack() {
       if [[ -n "$oracle_id" ]]; then
         local health
         health="$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' "$oracle_id" 2>/dev/null || true)"
-        if [[ "$health" == "healthy" ]]; then
-          oracle_ok=1
-        fi
+        [[ "$health" == "healthy" ]] && oracle_ok=1
       fi
     fi
 
@@ -116,13 +129,12 @@ cmd_deploy() {
 
   local lan_ip
   lan_ip="$(load_env_value LAN_BIND_IP)"
-  [[ -n "$lan_ip" ]] || die "LAN_BIND_IP must be set in $ENV_FILE"
-  [[ "$lan_ip" != "127.0.0.1" ]] || echo "WARNING: LAN_BIND_IP=127.0.0.1 is host-only, not LAN-accessible." >&2
+  validate_lan_ip "$lan_ip"
 
   echo "Validating compose config..."
   "${COMPOSE[@]}" config >/dev/null
 
-  echo "Starting LAN stack (build, remove orphans)..."
+  echo "Starting GPU-server LAN stack..."
   if ! "${COMPOSE[@]}" up -d --build --remove-orphans; then
     print_failure_logs
     die "docker compose up failed"
@@ -130,21 +142,19 @@ cmd_deploy() {
 
   wait_for_stack
 
-  local frontend_port backend_port
+  local frontend_port
   frontend_port="$(load_env_value FRONTEND_EXTERNAL_PORT)"
-  backend_port="$(load_env_value BACKEND_EXTERNAL_PORT)"
   frontend_port="${frontend_port:-8501}"
-  backend_port="${backend_port:-8000}"
 
   echo
   echo "Deploy succeeded."
-  echo "Frontend: http://${lan_ip}:${frontend_port}"
-  echo "Backend : http://${lan_ip}:${backend_port}"
+  echo "Schema Analyzer: http://${lan_ip}:${frontend_port}"
+  echo "Backend diagnostic (server only): http://127.0.0.1:$(load_env_value BACKEND_EXTERNAL_PORT | sed 's/^$/8000/')"
 
   local oracle_enabled
   oracle_enabled="$(load_env_value ORACLE_TEST_ENABLED)"
   if [[ "${oracle_enabled,,}" == "true" || "$oracle_enabled" == "1" || "${oracle_enabled,,}" == "yes" ]]; then
-    echo "Oracle target: host=oracle-test port=1521 service=FREEPDB1 schema=DEMIS_OWNER user=DEMIS_RO"
+    echo "Oracle target from backend: host=oracle-test port=1521 service=FREEPDB1 schema=DEMIS_OWNER user=DEMIS_RO"
   fi
 
   "${COMPOSE[@]}" ps
