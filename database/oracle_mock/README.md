@@ -17,6 +17,9 @@ It recreates the physical mock schema previously analyzed as:
 
 The fixture contains schema metadata only. It does not seed patient rows.
 
+The bootstrap creates a dedicated `DEMIS_DATA` tablespace inside `FREEPDB1` when it is missing.
+This avoids relying on image-specific default application tablespaces such as `USERS`.
+
 ## Start
 
 The LAN deployment script starts it when:
