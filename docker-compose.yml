@@ -167,6 +167,8 @@ services:
     environment:
       ORACLE_PWD: ${ORACLE_TEST_SYS_PASSWORD:-OracleDevAdmin123}
       ORACLE_CHARACTERSET: AL32UTF8
+      # SQL*Plus client charset for UTF-8 fixture scripts / Korean DB comments.
+      NLS_LANG: AMERICAN_AMERICA.AL32UTF8
       DEMIS_OWNER_PASSWORD: ${DEMIS_ORACLE_OWNER_PASSWORD:-DemisOwnerDev123}
       DEMIS_RO_PASSWORD: ${DEMIS_ORACLE_RO_PASSWORD:-DemisRoDev123}
     ports:
