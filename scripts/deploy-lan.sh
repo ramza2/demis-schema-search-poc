@@ -79,6 +79,24 @@ print_failure_logs() {
   "${COMPOSE[@]}" logs --no-color --tail=150 >&2 || true
 }
 
+wait_for_oracle_database() {
+  local deadline=$((SECONDS + 900))
+
+  echo "Waiting for Oracle FREEPDB1 database readiness..."
+  while (( SECONDS < deadline )); do
+    if "${COMPOSE[@]}" exec -T oracle-test bash -lc \
+      'printf "WHENEVER SQLERROR EXIT SQL.SQLCODE\\nALTER SESSION SET CONTAINER=FREEPDB1;\\nSELECT 1 FROM DUAL;\\nEXIT;\\n" | sqlplus -s "/ as sysdba" >/dev/null 2>&1'
+    then
+      echo "Oracle FREEPDB1 is ready."
+      return 0
+    fi
+    sleep 5
+  done
+
+  print_failure_logs
+  die "timed out waiting for Oracle FREEPDB1 readiness"
+}
+
 oracle_fixture_ready() {
   "${COMPOSE[@]}" exec -T oracle-test bash -lc \
     'sqlplus -s "/ as sysdba" @/opt/demis-bootstrap/03_verify.sql' \
@@ -170,8 +188,20 @@ cmd_deploy() {
     die "docker compose up failed"
   fi
 
+  local oracle_enabled
+  oracle_enabled="$(load_env_value ORACLE_TEST_ENABLED)"
+  if [[ "${oracle_enabled,,}" == "true" || "$oracle_enabled" == "1" || "${oracle_enabled,,}" == "yes" ]]; then
+    echo "Recreating Oracle test container with the current LAN configuration..."
+    if ! "${COMPOSE[@]}" up -d --force-recreate oracle-test; then
+      print_failure_logs
+      die "failed to recreate Oracle test container"
+    fi
+
+    wait_for_oracle_database
+    ensure_oracle_fixture
+  fi
+
   wait_for_stack
-  ensure_oracle_fixture
 
   local frontend_port backend_port
   frontend_port="$(load_env_value FRONTEND_EXTERNAL_PORT)"
@@ -184,8 +214,6 @@ cmd_deploy() {
   echo "Schema Analyzer: http://${lan_ip}:${frontend_port}"
   echo "Backend diagnostic (server only): http://127.0.0.1:${backend_port}"
 
-  local oracle_enabled
-  oracle_enabled="$(load_env_value ORACLE_TEST_ENABLED)"
   if [[ "${oracle_enabled,,}" == "true" || "$oracle_enabled" == "1" || "${oracle_enabled,,}" == "yes" ]]; then
     echo "Oracle target from backend: host=oracle-test port=1521 service=FREEPDB1 schema=DEMIS_OWNER user=DEMIS_RO"
   fi
