@@ -43,7 +43,10 @@ The LAN deployment does not publish Oracle to the GPU server host or LAN.
 Schema Analyzer reaches it only through the internal Docker network at `oracle-test:1521`.
 Use `docker exec` for server-side diagnostics if needed.
 
-Oracle's setup scripts run only when the Oracle data volume is first initialized.
-To rebuild the mock schema from scratch, remove the Oracle test volume and redeploy.
+The LAN deployment does not rely on the Oracle image's automatic setup hook.
+After Oracle FREEPDB1 is healthy, `scripts/deploy-lan.sh` explicitly runs the fixture scripts
+when the expected DEMIS fixture is missing, then verifies 2 users, 25 tables, and 25 SELECT grants.
+
+To rebuild the Oracle database volume from scratch, remove only the confirmed Oracle test volume and redeploy.
 
 Do not use these fixture credentials or this database in production.
