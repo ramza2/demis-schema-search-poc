@@ -99,7 +99,7 @@ wait_for_oracle_database() {
 
 oracle_fixture_ready() {
   "${COMPOSE[@]}" exec -T oracle-test bash -lc \
-    'sqlplus -s "/ as sysdba" @/opt/demis-bootstrap/03_verify.sql' \
+    'export NLS_LANG=AMERICAN_AMERICA.AL32UTF8; sqlplus -s "/ as sysdba" @/opt/demis-bootstrap/03_verify.sql' \
     >/dev/null 2>&1
 }
 
@@ -117,14 +117,14 @@ ensure_oracle_fixture() {
 
   echo "Initializing Oracle DEMIS mock fixture..."
   "${COMPOSE[@]}" exec -T oracle-test bash /opt/demis-bootstrap/01_users.sh
-  "${COMPOSE[@]}" exec -T oracle-test bash -lc 'sqlplus -s "/ as sysdba" @/opt/demis-bootstrap/02_schema.sql'
+  "${COMPOSE[@]}" exec -T oracle-test bash -lc 'export NLS_LANG=AMERICAN_AMERICA.AL32UTF8; sqlplus -s "/ as sysdba" @/opt/demis-bootstrap/02_schema.sql'
 
   if ! oracle_fixture_ready; then
     print_failure_logs
     die "Oracle DEMIS mock fixture verification failed"
   fi
 
-  echo "Oracle DEMIS mock fixture verified: users=2 tables=25 select_grants=25."
+  echo "Oracle DEMIS mock fixture verified: users=2 tables=25 select_grants=25 comments=25/13 UTF-8=OK."
 }
 
 wait_for_stack() {
