@@ -79,6 +79,70 @@ print_failure_logs() {
   "${COMPOSE[@]}" logs --no-color --tail=150 >&2 || true
 }
 
+oracle_fixture_ready() {
+  "${COMPOSE[@]}" exec -T oracle-test bash -lc '
+    sqlplus -s "/ as sysdba" <<'"'"'SQL'"'"'
+WHENEVER SQLERROR EXIT SQL.SQLCODE
+SET HEADING OFF FEEDBACK OFF PAGESIZE 0 VERIFY OFF ECHO OFF
+ALTER SESSION SET CONTAINER=FREEPDB1;
+DECLARE
+  v_users  PLS_INTEGER;
+  v_tables PLS_INTEGER;
+  v_grants PLS_INTEGER;
+BEGIN
+  SELECT COUNT(*) INTO v_users
+    FROM DBA_USERS
+   WHERE USERNAME IN ('"'"'DEMIS_OWNER'"'"', '"'"'DEMIS_RO'"'"');
+
+  SELECT COUNT(*) INTO v_tables
+    FROM DBA_TABLES
+   WHERE OWNER = '"'"'DEMIS_OWNER'"'"';
+
+  SELECT COUNT(*) INTO v_grants
+    FROM DBA_TAB_PRIVS
+   WHERE OWNER = '"'"'DEMIS_OWNER'"'"'
+     AND GRANTEE = '"'"'DEMIS_RO'"'"'
+     AND PRIVILEGE = '"'"'SELECT'"'"';
+
+  IF v_users != 2 OR v_tables != 25 OR v_grants != 25 THEN
+    RAISE_APPLICATION_ERROR(
+      -20001,
+      '"'"'DEMIS fixture incomplete users='"'"' || v_users ||
+      '"'"' tables='"'"' || v_tables ||
+      '"'"' grants='"'"' || v_grants
+    );
+  END IF;
+END;
+/
+EXIT;
+SQL
+  ' >/dev/null 2>&1
+}
+
+ensure_oracle_fixture() {
+  local oracle_enabled
+  oracle_enabled="$(load_env_value ORACLE_TEST_ENABLED)"
+  if [[ ! ("${oracle_enabled,,}" == "true" || "$oracle_enabled" == "1" || "${oracle_enabled,,}" == "yes") ]]; then
+    return 0
+  fi
+
+  if oracle_fixture_ready; then
+    echo "Oracle DEMIS mock fixture already initialized."
+    return 0
+  fi
+
+  echo "Initializing Oracle DEMIS mock fixture..."
+  "${COMPOSE[@]}" exec -T oracle-test bash /opt/demis-bootstrap/01_users.sh
+  "${COMPOSE[@]}" exec -T oracle-test bash -lc 'sqlplus -s "/ as sysdba" @/opt/demis-bootstrap/02_schema.sql'
+
+  if ! oracle_fixture_ready; then
+    print_failure_logs
+    die "Oracle DEMIS mock fixture verification failed"
+  fi
+
+  echo "Oracle DEMIS mock fixture verified: users=2 tables=25 select_grants=25."
+}
+
 wait_for_stack() {
   local oracle_enabled
   oracle_enabled="$(load_env_value ORACLE_TEST_ENABLED)"
@@ -141,6 +205,7 @@ cmd_deploy() {
   fi
 
   wait_for_stack
+  ensure_oracle_fixture
 
   local frontend_port backend_port
   frontend_port="$(load_env_value FRONTEND_EXTERNAL_PORT)"
