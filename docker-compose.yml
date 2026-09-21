@@ -160,6 +160,36 @@ services:
     networks:
       - demis-net
 
+  oracle-test:
+    profiles: ["oracle-test"]
+    image: ${ORACLE_TEST_IMAGE:-container-registry.oracle.com/database/free:latest-lite}
+    container_name: demis-oracle-test
+    environment:
+      ORACLE_PWD: ${ORACLE_TEST_SYS_PASSWORD:-OracleDevAdmin123}
+      ORACLE_CHARACTERSET: AL32UTF8
+      # SQL*Plus client charset for UTF-8 fixture scripts / Korean DB comments.
+      NLS_LANG: AMERICAN_AMERICA.AL32UTF8
+      DEMIS_OWNER_PASSWORD: ${DEMIS_ORACLE_OWNER_PASSWORD:-DemisOwnerDev123}
+      DEMIS_RO_PASSWORD: ${DEMIS_ORACLE_RO_PASSWORD:-DemisRoDev123}
+    ports:
+      - "${ORACLE_TEST_EXTERNAL_PORT:-1522}:1521"
+    volumes:
+      - oracle_test_data:/opt/oracle/oradata
+      - ./database/oracle_mock/setup:/opt/demis-bootstrap:ro
+    shm_size: "1g"
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "printf \"WHENEVER SQLERROR EXIT SQL.SQLCODE\\nALTER SESSION SET CONTAINER=FREEPDB1;\\nSELECT 1 FROM DUAL;\\nEXIT;\\n\" | sqlplus -s / as sysdba >/dev/null 2>&1",
+        ]
+      interval: 15s
+      timeout: 10s
+      retries: 60
+      start_period: 60s
+    networks:
+      - demis-net
+
   mariadb-test:
     profiles: ["integration-dbs"]
     image: mariadb:11.4
@@ -189,6 +219,7 @@ volumes:
   embedding_model_cache:
   mysql_test_data:
   mariadb_test_data:
+  oracle_test_data:
 
 networks:
   demis-net:

@@ -1,0 +1,72 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+OWNER_PASSWORD="${DEMIS_OWNER_PASSWORD:-}"
+RO_PASSWORD="${DEMIS_RO_PASSWORD:-}"
+
+if [[ -z "$OWNER_PASSWORD" || -z "$RO_PASSWORD" ]]; then
+  echo "DEMIS_OWNER_PASSWORD and DEMIS_RO_PASSWORD are required" >&2
+  exit 1
+fi
+
+# This fixture is local/test only. Keep interpolation predictable and reject
+# shell/SQL metacharacters rather than trying to escape arbitrary passwords.
+if [[ ! "$OWNER_PASSWORD" =~ ^[A-Za-z0-9_]+$ ]]; then
+  echo "DEMIS_OWNER_PASSWORD must contain only A-Z, a-z, 0-9, _ for this test fixture" >&2
+  exit 1
+fi
+if [[ ! "$RO_PASSWORD" =~ ^[A-Za-z0-9_]+$ ]]; then
+  echo "DEMIS_RO_PASSWORD must contain only A-Z, a-z, 0-9, _ for this test fixture" >&2
+  exit 1
+fi
+
+sqlplus -s / as sysdba <<SQL
+WHENEVER SQLERROR EXIT SQL.SQLCODE
+ALTER SESSION SET CONTAINER=FREEPDB1;
+
+DECLARE
+  v_count PLS_INTEGER;
+BEGIN
+  SELECT COUNT(*) INTO v_count
+    FROM DBA_TABLESPACES
+   WHERE TABLESPACE_NAME = 'DEMIS_DATA';
+
+  IF v_count = 0 THEN
+    EXECUTE IMMEDIATE
+      'CREATE TABLESPACE DEMIS_DATA ' ||
+      'DATAFILE ''/opt/oracle/oradata/FREE/FREEPDB1/demis_data01.dbf'' ' ||
+      'SIZE 100M AUTOEXTEND ON NEXT 50M MAXSIZE 2G';
+  END IF;
+END;
+/
+
+BEGIN
+  EXECUTE IMMEDIATE 'DROP USER DEMIS_RO CASCADE';
+EXCEPTION
+  WHEN OTHERS THEN
+    IF SQLCODE != -1918 THEN RAISE; END IF;
+END;
+/
+
+BEGIN
+  EXECUTE IMMEDIATE 'DROP USER DEMIS_OWNER CASCADE';
+EXCEPTION
+  WHEN OTHERS THEN
+    IF SQLCODE != -1918 THEN RAISE; END IF;
+END;
+/
+
+CREATE USER DEMIS_OWNER IDENTIFIED BY "$OWNER_PASSWORD"
+  DEFAULT TABLESPACE DEMIS_DATA
+  TEMPORARY TABLESPACE TEMP
+  QUOTA UNLIMITED ON DEMIS_DATA;
+
+CREATE USER DEMIS_RO IDENTIFIED BY "$RO_PASSWORD"
+  DEFAULT TABLESPACE DEMIS_DATA
+  TEMPORARY TABLESPACE TEMP;
+
+GRANT CREATE SESSION TO DEMIS_OWNER;
+GRANT CREATE SESSION TO DEMIS_RO;
+
+EXIT;
+SQL
